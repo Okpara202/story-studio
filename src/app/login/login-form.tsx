@@ -76,6 +76,17 @@ export function LoginForm({ next, setup }: { next: string; setup: boolean }) {
           <p className="text-xs text-muted">This browser stays signed in for 30 days.</p>
         </form>
       )}
+
+      <p className="mt-6 border-t border-line pt-4 text-center text-sm text-muted">
+        Contact{" "}
+        <a
+          href="mailto:okparafavour202@gmail.com?subject=Story%20Studio%20access"
+          className="text-accent underline-offset-4 hover:underline"
+        >
+          okparafavour202@gmail.com
+        </a>{" "}
+        to use the app.
+      </p>
     </Card>
   );
 }

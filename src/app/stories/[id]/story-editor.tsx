@@ -8,8 +8,9 @@ import { estimateStorySec, formatDuration } from "@/shared/timing";
 import { suggestVoices } from "@/shared/voices";
 import type { JobFile } from "@/shared/job";
 import type { StoryStatus } from "@/shared/status";
-import { buildImagePrompt, sceneImageState } from "@/shared/images";
+import { buildImagePrompt, portraitState, sceneImageState } from "@/shared/images";
 import type { SceneImageView } from "@/server/scene-images";
+import type { PortraitView } from "@/server/characters";
 import { SCRIPT_CHEATSHEET } from "@/lib/example-script";
 import { Button, plural, StatusChip } from "@/components/ui";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -17,6 +18,7 @@ import { deleteStoryAction, saveStoryAction } from "../../actions";
 import { ScriptPreview } from "./script-preview";
 import { SceneImage } from "./scene-image";
 import { useSceneImages } from "./use-scene-images";
+import { usePortraits } from "./use-portraits";
 import { useGeneration } from "./use-generation";
 import { GenerationPanel } from "./generation-panel";
 
@@ -26,11 +28,21 @@ interface Props {
   narratorVoice: string;
   artStyle: string;
   images: Record<number, SceneImageView>;
+  /** Reference portraits of described characters, by character id. */
+  portraits: Record<string, PortraitView>;
   /** True when a fast image generator (Cloudflare) is configured. */
   canGenerateImages: boolean;
 }
 
-export function StoryEditor({ job, status, narratorVoice, artStyle, images: initialImages, canGenerateImages }: Props) {
+export function StoryEditor({
+  job,
+  status,
+  narratorVoice,
+  artStyle,
+  images: initialImages,
+  portraits: initialPortraits,
+  canGenerateImages,
+}: Props) {
   const [script, setScript] = useState(job.script);
   const [savedScript, setSavedScript] = useState(job.script);
   const [saveError, setSaveError] = useState(false);
@@ -78,10 +90,11 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
     setSavedScript(script);
   };
   const sceneImages = useSceneImages(job.jobId, initialImages, flushSave);
+  const portraits = usePortraits(job.jobId, initialPortraits, flushSave);
   const imageStates = new Map(
     parsed.scenes.map((s) => [
       s.index,
-      sceneImageState(sceneImages.images[s.index]?.entry, buildImagePrompt(s, artStyle), s.description),
+      sceneImageState(sceneImages.images[s.index]?.entry, buildImagePrompt(s, artStyle, parsed.looks), s.description),
     ]),
   );
   // Scenes the batch button would draw: missing images, and outdated AI images (never replaces uploads).
@@ -239,6 +252,20 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
             onVoiceChange={setVoice}
             onJumpToLine={jumpToLine}
             onAddEffects={addEffects}
+            renderPortrait={(look) => (
+              <SceneImage
+                sceneNo={0}
+                label={`${look.name}'s portrait`}
+                state={portraitState(portraits.portraits[look.id]?.entry, look, artStyle)}
+                view={portraits.portraits[look.id]}
+                busy={portraits.busy[look.id]}
+                error={portraits.errors[look.id]}
+                canGenerate={canGenerateImages}
+                onGenerate={(newVariant) => portraits.generate(look.id, newVariant)}
+                onUpload={(file) => portraits.upload(look.id, file)}
+                onRemove={() => portraits.remove(look.id)}
+              />
+            )}
             renderSceneImage={(scene) => (
               <SceneImage
                 sceneNo={scene.index}

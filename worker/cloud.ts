@@ -111,14 +111,19 @@ async function main() {
 
     // 2. Voices (unchanged lines are reused from the clips already in storage)
     await downloadPrefix(store, `${prefix}audio/`, path.join(work, "audio"));
-    const voices = await voiceJob({
-      jobDir: work,
-      providers: defaultProviders(),
-      onLog: (m) => console.log(`  ${m}`),
-      onProgress: (done, total, message) => status.progress(done / total, message),
-    });
+    let voices: Awaited<ReturnType<typeof voiceJob>>;
+    try {
+      voices = await voiceJob({
+        jobDir: work,
+        providers: defaultProviders(),
+        onLog: (m) => console.log(`  ${m}`),
+        onProgress: (done, total, message) => status.progress(done / total, message),
+      });
+    } finally {
+      // Also after an interruption: lines voiced so far are kept for the next try.
+      await mirrorDir(store, path.join(work, "audio"), `${prefix}audio/`);
+    }
     warnings.push(...voices.warnings);
-    await mirrorDir(store, path.join(work, "audio"), `${prefix}audio/`);
     lap(`voices: ${voices.synthesized} new, ${voices.reused} reused (${voices.provider})`);
 
     // 3. Images, straight into storage; then fetch them for rendering

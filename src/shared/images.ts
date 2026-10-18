@@ -1,4 +1,4 @@
-import type { Scene } from "./script/types.ts";
+import type { CharacterLook, Scene } from "./script/types.ts";
 
 export type ImageSource = "generated" | "upload";
 
@@ -38,7 +38,11 @@ const MAX_PROMPT = 1500;
  * words most, so this keeps every scene in one look), then the scene's
  * [scene: ...] description, or the gist of its lines when there is none.
  */
-export function buildImagePrompt(scene: Pick<Scene, "description" | "lines">, artStyle: string): string {
+export function buildImagePrompt(
+  scene: Pick<Scene, "description" | "lines"> & { characters?: string[] },
+  artStyle: string,
+  looks: CharacterLook[] = [],
+): string {
   let subject = scene.description?.trim();
   if (!subject) {
     const words = scene.lines.map((l) => l.text).join(" ").split(/\s+/).filter(Boolean);
@@ -46,7 +50,39 @@ export function buildImagePrompt(scene: Pick<Scene, "description" | "lines">, ar
   }
   const style = artStyle.trim().replace(/[.,\s]+$/, "");
   const scenePart = `${subject.replace(/[.\s]+$/, "")}, ${COMPOSITION}`;
-  return (style ? `${style}. Scene: ${scenePart}` : scenePart).slice(0, MAX_PROMPT);
+  // Each named character: their description, and the reference portrait sent with the request (image 0, 1, ...).
+  const people = sceneLooks(scene, looks)
+    .map((l, i) => `${l.name} is ${l.look.replace(/[.\s]+$/, "")}, the same person as in image ${i}`)
+    .join(". ");
+  const prompt = style ? `${style}. Scene: ${scenePart}` : scenePart;
+  return (people ? `${prompt}. ${people}` : prompt).slice(0, MAX_PROMPT);
+}
+
+/** The described characters a scene names, in order (matches the order of reference images). */
+export function sceneLooks(scene: { characters?: string[] }, looks: CharacterLook[]): CharacterLook[] {
+  return (scene.characters ?? []).map((id) => looks.find((l) => l.id === id)).filter((l): l is CharacterLook => !!l);
+}
+
+/** Prompt for a character's reference portrait: plain and evenly lit, so it transfers well into scenes. */
+export function portraitPrompt(look: Pick<CharacterLook, "look">, artStyle: string): string {
+  const style = artStyle.trim().replace(/[.,\s]+$/, "");
+  const subject = `character reference portrait of ${look.look.replace(/[.\s]+$/, "")}, head and shoulders, facing the viewer, plain dark background, soft even light`;
+  return (style ? `${style}. ${subject}` : subject).slice(0, MAX_PROMPT);
+}
+
+/** characters/{slug}.json: a reference portrait record, like a scene image's plus the look it shows. */
+export type PortraitEntry = SceneImageEntry & { look: string };
+
+/** Generated portraits go stale when their prompt changes; uploads when the character's description does. */
+export function portraitState(entry: PortraitEntry | undefined, look: Pick<CharacterLook, "look">, artStyle: string): SceneImageState {
+  if (!entry) return "missing";
+  if (entry.source === "upload") return entry.look === look.look ? "ok" : "outdated";
+  return entry.prompt === portraitPrompt(look, artStyle) ? "ok" : "outdated";
+}
+
+/** Storage-safe name for a character, e.g. "DR HALE" -> "dr-hale". */
+export function characterSlug(id: string): string {
+  return id.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "character";
 }
 
 /** Stable seed per story, scene and variant, so regenerating is reproducible. */

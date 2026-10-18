@@ -1,7 +1,7 @@
 "use client";
 
 import type { GenerationView } from "@/server/generation";
-import type { JobStage } from "@/shared/status";
+import { overallPercent, type JobStage } from "@/shared/status";
 import { formatDuration } from "@/shared/timing";
 import { formatAmount } from "@/shared/usage";
 import { Button, ButtonLink, Card } from "@/components/ui";
@@ -115,11 +115,14 @@ export function GenerationPanel({ view, onRetry, retrying, onJumpToScene, review
   }
 
   // Queued or running
+  const percent = overallPercent(s);
   return (
     <Card className="p-5" aria-live="polite">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-serif text-xl">{s.state === "queued" ? "Starting the cloud worker…" : "Generating your video…"}</h2>
-        <span className="size-5 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-hidden />
+        <span className="font-mono text-2xl tabular-nums text-accent" aria-label={`${percent}% done`}>
+          {percent}%
+        </span>
       </div>
       <ol className="mt-4 grid grid-cols-3 gap-2">
         {STAGES.map((st, i) => {

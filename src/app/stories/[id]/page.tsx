@@ -3,6 +3,8 @@ import { connection } from "next/server";
 import { getStore } from "@/server/storage";
 import { getStory, getStyle, keys, NotFoundError } from "@/server/jobs";
 import { sceneImageViews } from "@/server/scene-images";
+import { portraitViews } from "@/server/characters";
+import { parseScript } from "@/shared/script/parse";
 import { fastImageProviders } from "@/server/images";
 import { ButtonLink, EmptyState } from "@/components/ui";
 import { StoryEditor } from "./story-editor";
@@ -33,7 +35,12 @@ async function StoryLoader({ params }: { params: Promise<{ id: string }> }) {
       </div>
     );
   }
-  const [style, images] = await Promise.all([getStyle(store), sceneImageViews({ store, prefix: keys.jobDir(id) })]);
+  const files = { store, prefix: keys.jobDir(id) };
+  const [style, images, portraits] = await Promise.all([
+    getStyle(store),
+    sceneImageViews(files),
+    portraitViews(files, parseScript(story.job.script).looks),
+  ]);
   return (
     <StoryEditor
       job={story.job}
@@ -41,6 +48,7 @@ async function StoryLoader({ params }: { params: Promise<{ id: string }> }) {
       narratorVoice={style.narratorVoice}
       artStyle={style.artStyle}
       images={images}
+      portraits={portraits}
       canGenerateImages={fastImageProviders().length > 0}
     />
   );

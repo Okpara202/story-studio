@@ -28,6 +28,14 @@ import {
   type SceneImageView,
 } from "@/server/scene-images";
 import { fastImageProviders } from "@/server/images";
+import {
+  generatePortrait,
+  portraitUploadKey,
+  portraitView,
+  recordPortraitUpload,
+  removePortrait,
+  type PortraitView,
+} from "@/server/characters";
 import { recordImage } from "@/server/usage/ledger";
 import { storageByStory, type StorageBreakdown } from "@/server/usage/storage-breakdown";
 import { IMAGE_TYPES, MAX_IMAGE_BYTES } from "@/shared/images";
@@ -43,10 +51,22 @@ async function loadScene(id: string, sceneNo: number) {
   const store = getStore();
   const story = await getStory(store, v.str(id, "Story id", 40));
   if (!story) throw new v.ValidationError("Story not found");
-  const scene = parseScript(story.job.script).scenes.find((s) => s.index === v.sceneNo(sceneNo));
+  const parsed = parseScript(story.job.script);
+  const scene = parsed.scenes.find((s) => s.index === v.sceneNo(sceneNo));
   if (!scene) throw new v.ValidationError(`Scene ${sceneNo} no longer exists. Save the script and try again.`);
   const files: JobFiles = { store, prefix: keys.jobDir(id) };
-  return { story, scene, files };
+  return { story, scene, files, looks: parsed.looks };
+}
+
+/** Load a story and one of its described characters, as saved. */
+async function loadLook(id: string, characterId: string) {
+  const store = getStore();
+  const story = await getStory(store, v.str(id, "Story id", 40));
+  if (!story) throw new v.ValidationError("Story not found");
+  const look = parseScript(story.job.script).looks.find((l) => l.id === v.str(characterId, "Character", 60));
+  if (!look) throw new v.ValidationError(`${characterId} is no longer described in the script. Save the script and try again.`);
+  const files: JobFiles = { store, prefix: keys.jobDir(id) };
+  return { story, look, files };
 }
 
 const errorOf = (err: unknown) => ({ error: err instanceof Error ? err.message : "Something went wrong." });
@@ -118,16 +138,19 @@ export async function generateSceneImageAction(
 ): Promise<Result<SceneImageView>> {
   await requireSession();
   try {
-    const { scene, files } = await loadScene(id, sceneNo);
+    const { scene, files, looks } = await loadScene(id, sceneNo);
     const style = await getStyle(files.store);
+    const portraits: string[] = [];
     const entry = await generateSceneImage(files, {
       jobId: id,
       scene,
       artStyle: style.artStyle,
       providers: fastImageProviders(),
+      looks,
       newVariant: Boolean(newVariant),
+      onPortrait: (p) => p.provider && portraits.push(p.provider),
     });
-    if (entry.provider) await recordImage(files.store, entry.provider);
+    for (const provider of [...portraits, entry.provider]) if (provider) await recordImage(files.store, provider);
     return await sceneImageView(files, sceneNo, entry);
   } catch (err) {
     return errorOf(err);
@@ -176,6 +199,71 @@ export async function removeSceneImageAction(id: string, sceneNo: number): Promi
     const store = getStore();
     await getStory(store, v.str(id, "Story id", 40));
     await removeSceneImage({ store, prefix: keys.jobDir(id) }, v.sceneNo(sceneNo));
+    return { ok: true };
+  } catch (err) {
+    return errorOf(err);
+  }
+}
+
+export async function generatePortraitAction(
+  id: string,
+  characterId: string,
+  newVariant: boolean,
+): Promise<Result<PortraitView>> {
+  await requireSession();
+  try {
+    const { look, files } = await loadLook(id, characterId);
+    const style = await getStyle(files.store);
+    const entry = await generatePortrait(files, {
+      jobId: id,
+      look,
+      artStyle: style.artStyle,
+      providers: fastImageProviders(),
+      newVariant: Boolean(newVariant),
+    });
+    if (entry.provider) await recordImage(files.store, entry.provider);
+    return await portraitView(files, entry);
+  } catch (err) {
+    return errorOf(err);
+  }
+}
+
+export async function createPortraitUploadAction(
+  id: string,
+  characterId: string,
+  file: { type: string; size: number },
+): Promise<Result<{ url: string; ext: string }>> {
+  await requireSession();
+  const ext = IMAGE_TYPES[file?.type];
+  if (!ext) return { error: "Choose a PNG, JPG or WebP image." };
+  if (typeof file.size !== "number" || file.size > MAX_IMAGE_BYTES) {
+    return { error: `That image is too large. The limit is ${MAX_IMAGE_BYTES / 1024 / 1024} MB.` };
+  }
+  try {
+    const { look, files } = await loadLook(id, characterId);
+    return { url: await files.store.presignPut(portraitUploadKey(files, look.id, ext), file.type), ext };
+  } catch (err) {
+    return errorOf(err);
+  }
+}
+
+export async function confirmPortraitUploadAction(id: string, characterId: string, ext: string): Promise<Result<PortraitView>> {
+  await requireSession();
+  if (!Object.values(IMAGE_TYPES).includes(ext)) return { error: "Invalid image type" };
+  try {
+    const { look, files } = await loadLook(id, characterId);
+    return await portraitView(files, await recordPortraitUpload(files, look, ext));
+  } catch (err) {
+    return errorOf(err);
+  }
+}
+
+export async function removePortraitAction(id: string, characterId: string): Promise<Result<{ ok: true }>> {
+  await requireSession();
+  try {
+    const store = getStore();
+    await getStory(store, v.str(id, "Story id", 40));
+    await removePortrait({ store, prefix: keys.jobDir(id) }, v.str(characterId, "Character", 60));
     return { ok: true };
   } catch (err) {
     return errorOf(err);

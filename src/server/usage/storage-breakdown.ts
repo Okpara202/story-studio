@@ -19,7 +19,7 @@ export interface StorageBreakdown {
 }
 
 function partOf(rest: string): keyof StoryStorage["parts"] {
-  if (rest.startsWith("images/")) return "images";
+  if (rest.startsWith("images/") || rest.startsWith("characters/")) return "images";
   if (rest.startsWith("audio/")) return "voices";
   if (rest.startsWith("output/")) return "videos";
   return "other";

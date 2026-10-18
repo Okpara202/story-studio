@@ -143,7 +143,7 @@ export function ReviewScreen({ job, status, initialView, images: initialImages, 
                     sceneNo={scene.index}
                     state={sceneImageState(
                       sceneImages.images[scene.index]?.entry,
-                      buildImagePrompt(scene, artStyle),
+                      buildImagePrompt(scene, artStyle, parsed.looks),
                       scene.description,
                     )}
                     view={sceneImages.images[scene.index]}

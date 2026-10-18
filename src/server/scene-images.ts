@@ -1,11 +1,13 @@
 import { parseScript } from "../shared/script/parse.ts";
-import type { Scene } from "../shared/script/types.ts";
+import type { CharacterLook, Scene } from "../shared/script/types.ts";
+import { prunePortraits, sceneReferences, type PortraitEntry } from "./characters.ts";
 import { sceneImageBase, type JobFile } from "../shared/job.ts";
 import {
   buildImagePrompt,
   contentTypeOf,
   IMAGE_EXTS,
   sceneImageState,
+  sceneLooks,
   sceneSeed,
   type SceneImageEntry,
   type SceneImageState,
@@ -78,13 +80,17 @@ export async function recordUpload(j: JobFiles, scene: Pick<Scene, "index" | "de
 
 export interface GenerateOptions {
   jobId: string;
-  scene: Pick<Scene, "index" | "description" | "lines">;
+  scene: Pick<Scene, "index" | "description" | "lines"> & { characters?: string[] };
   artStyle: string;
   providers: ImageProvider[];
+  /** Described characters of the story; the scene's own are picked by name. */
+  looks?: CharacterLook[];
   /** Pick a new seed ("New image") instead of reproducing the current one. */
   newVariant?: boolean;
   /** Providers already known to be out of quota for this run. */
   exhausted?: Set<string>;
+  /** Called for each character portrait drawn on the way. */
+  onPortrait?: (entry: PortraitEntry) => void;
 }
 
 /** Generate one scene's image, trying providers in order. */
@@ -94,14 +100,23 @@ export async function generateSceneImage(j: JobFiles, opts: GenerateOptions): Pr
   }
   const previous = await readSceneImage(j, opts.scene.index);
   const variant = (previous?.variant ?? 0) + (opts.newVariant || !previous ? 1 : 0);
-  const prompt = buildImagePrompt(opts.scene, opts.artStyle);
+  const looks = opts.looks ?? [];
+  const prompt = buildImagePrompt(opts.scene, opts.artStyle, looks);
   const seed = sceneSeed(opts.jobId, opts.scene.index, variant);
   const errors: string[] = [];
+  const references = await sceneReferences(j, {
+    jobId: opts.jobId,
+    looks: sceneLooks(opts.scene, looks),
+    artStyle: opts.artStyle,
+    providers: opts.providers,
+    exhausted: opts.exhausted,
+    onPortrait: opts.onPortrait,
+  });
 
   for (const provider of opts.providers) {
     if (opts.exhausted?.has(provider.name)) continue;
     try {
-      const image = await provider.generate(prompt, { seed });
+      const image = await provider.generate(prompt, { seed, references });
       const entry: SceneImageEntry = {
         file: `${sceneImageBase(opts.scene.index)}.${image.ext}`,
         source: "generated",
@@ -163,8 +178,12 @@ export async function ensureSceneImages(
   providers: ImageProvider[],
   opts: { force?: boolean; only?: number; onProgress?: (done: number, total: number, message: string) => void } = {},
 ): Promise<SceneImageResult[]> {
-  const allScenes = parseScript(job.script).scenes;
-  if (!opts.only) await pruneSceneImages(j, allScenes.map((s) => s.index));
+  const story = parseScript(job.script);
+  const allScenes = story.scenes;
+  if (!opts.only) {
+    await pruneSceneImages(j, allScenes.map((s) => s.index));
+    await prunePortraits(j, story.looks);
+  }
   const scenes = allScenes.filter((s) => !opts.only || s.index === opts.only);
   const artStyle = job.style?.artStyle ?? "";
   const existing = await listSceneImages(j);
@@ -173,7 +192,7 @@ export async function ensureSceneImages(
 
   for (const [i, scene] of scenes.entries()) {
     const entry = existing.get(scene.index);
-    const state = sceneImageState(entry, buildImagePrompt(scene, artStyle), scene.description);
+    const state = sceneImageState(entry, buildImagePrompt(scene, artStyle, story.looks), scene.description);
     if (entry?.source === "upload") {
       results.push({ scene: scene.index, result: "kept-upload" });
       continue;
@@ -184,7 +203,15 @@ export async function ensureSceneImages(
     }
     opts.onProgress?.(i, scenes.length, `Drawing scene ${scene.index} of ${scenes.length}`);
     try {
-      await generateSceneImage(j, { jobId: job.jobId, scene, artStyle, providers, exhausted, newVariant: opts.force && !!entry });
+      await generateSceneImage(j, {
+        jobId: job.jobId,
+        scene,
+        artStyle,
+        providers,
+        looks: story.looks,
+        exhausted,
+        newVariant: opts.force && !!entry,
+      });
       results.push({ scene: scene.index, result: "generated" });
     } catch (err) {
       results.push({ scene: scene.index, result: "failed", error: err instanceof Error ? err.message : String(err) });
@@ -217,11 +244,12 @@ export async function sceneImageViews(j: JobFiles): Promise<Record<number, Scene
 
 /** Image state per scene for the editor. */
 export function describeSceneImages(
-  scenes: Pick<Scene, "index" | "description" | "lines">[],
+  scenes: (Pick<Scene, "index" | "description" | "lines"> & { characters?: string[] })[],
   entries: Map<number, SceneImageEntry>,
   artStyle: string,
+  looks: CharacterLook[] = [],
 ): Map<number, SceneImageState> {
   return new Map(
-    scenes.map((s) => [s.index, sceneImageState(entries.get(s.index), buildImagePrompt(s, artStyle), s.description)]),
+    scenes.map((s) => [s.index, sceneImageState(entries.get(s.index), buildImagePrompt(s, artStyle, looks), s.description)]),
   );
 }

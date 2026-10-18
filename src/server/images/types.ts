@@ -6,6 +6,10 @@ export interface GeneratedImage {
 
 export interface ImageOptions {
   seed: number;
+  /** Output size where the model allows it; default 1024x768. */
+  size?: { width: number; height: number };
+  /** Reference pictures (JPEG/PNG, under 512x512), referred to as "image 0", "image 1"... in the prompt. Ignored by models without support. */
+  references?: Buffer[];
 }
 
 /** A text-to-image backend: generate(prompt, options) -> image. */

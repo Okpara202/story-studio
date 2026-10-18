@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile, mkdir, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { clipHash, planLines, voiceJob, type AudioManifest } from "./voices.ts";
+import { clipHash, planLines, voiceJob, VoicesInterruptedError, type AudioManifest } from "./voices.ts";
 import { runFfmpeg } from "./ffmpeg.ts";
 import { assignPiperVoices } from "../tts/piper.ts";
 import { suggestVoices, VOICES } from "../../src/shared/voices.ts";
@@ -115,9 +115,28 @@ test("voices every line, trims silence, then reuses unchanged lines", () =>
     assert.deepEqual(files, ["manifest.json", "s01-l01.mp3", "s01-l02.mp3", "s01-l03.mp3", "s02-l01.mp3"]);
   }));
 
-test("falls back to the next provider for the whole story", () =>
+test("interrupted part-way: stops (no voice switch), keeps finished lines, and the retry finishes", () =>
   withJob(SCRIPT, async (dir) => {
-    const broken = new FakeProvider("edge", 1);
+    const busy = new FakeProvider("edge", 2);
+    const backup = new FakeProvider("piper");
+    await assert.rejects(voiceJob({ jobDir: dir, providers: [busy, backup] }), (err: Error) => {
+      assert.ok(err instanceof VoicesInterruptedError);
+      assert.match(err.message, /after 2 new lines[^]*Try again/);
+      return true;
+    });
+    assert.equal(backup.calls.length, 0, "the backup voices were not used");
+    const kept = JSON.parse(await readFile(path.join(dir, "audio", "manifest.json"), "utf8")) as AudioManifest;
+    assert.deepEqual(Object.keys(kept.clips).sort(), ["s01-l01", "s01-l02"]);
+
+    const again = new FakeProvider("edge");
+    const result = await voiceJob({ jobDir: dir, providers: [again, backup] });
+    assert.deepEqual([result.provider, result.synthesized, result.reused], ["edge", 1, 2]);
+    assert.deepEqual(again.calls, ["Three."]);
+  }));
+
+test("falls back to the next provider for the whole story when the first can't start", () =>
+  withJob(SCRIPT, async (dir) => {
+    const broken = new FakeProvider("edge", 0);
     const backup = new FakeProvider("piper");
     const result = await voiceJob({ jobDir: dir, providers: [broken, backup] });
     assert.equal(result.provider, "piper");

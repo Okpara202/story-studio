@@ -141,11 +141,29 @@ export async function voiceJob(opts: VoiceJobOptions): Promise<VoiceJobResult> {
       const result = await voiceWith(provider, lines, audioDir, opts);
       return { ...result, warnings };
     } catch (err) {
+      const made = (err as { synthesized?: number }).synthesized ?? 0;
+      log(`${provider.name} failed after ${made} new lines: ${errorMessage(err)}`);
+      // It worked for part of the story, so it's busy rather than broken. Switching to the
+      // backup now would give the whole video the backup voices; stop and let a retry finish.
+      if (made > 0) throw new VoicesInterruptedError(provider.name, made, errorMessage(err));
       warnings.push(`${provider.name}: ${errorMessage(err)}`);
-      log(`${provider.name} failed: ${errorMessage(err)}`);
     }
   }
   throw new Error(`No voice provider could voice this story.\n  ${warnings.join("\n  ")}`);
+}
+
+/** A provider voiced part of the story, then stopped. The finished lines are saved for the next try. */
+export class VoicesInterruptedError extends Error {
+  readonly provider: string;
+  readonly made: number;
+  constructor(provider: string, made: number, cause: string) {
+    super(
+      `The free voice service stopped answering after ${made} new lines (${cause}). ` +
+        "Those lines are saved. Press Try again in a few minutes to finish with the same voices.",
+    );
+    this.provider = provider;
+    this.made = made;
+  }
 }
 
 async function voiceWith(
@@ -168,10 +186,11 @@ async function voiceWith(
   const staging = path.join(audioDir, ".next");
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true });
+  const clips: Record<string, ClipEntry> = {};
+  const made: string[] = [];
+  let synthesized = 0;
   try {
     await provider.prepare?.([...new Set(lines.map((l) => l.voiceId))]);
-    const clips: Record<string, ClipEntry> = {};
-    let synthesized = 0;
     for (const [i, line] of lines.entries()) {
       const hash = clipHash(provider.name, line.voiceId, line.text, line);
       const out = path.join(staging, `${line.key}.mp3`);
@@ -181,8 +200,14 @@ async function voiceWith(
         clips[line.key] = { ...cached.entry, hash };
       } else {
         opts.onProgress?.(i, lines.length, `Voicing line ${i + 1} of ${lines.length}`);
-        await speakLine(provider, line, path.join(staging, line.key), out);
+        try {
+          await speakLine(provider, line, path.join(staging, line.key), out);
+        } catch (err) {
+          if (synthesized > 0) await keepFinishedClips(audioDir, staging, old, provider.name, made, clips);
+          throw Object.assign(err instanceof Error ? err : new Error(String(err)), { synthesized });
+        }
         clips[line.key] = { hash, voiceId: line.voiceId, durationSec: await probeDuration(out) };
+        made.push(line.key);
         synthesized++;
       }
     }
@@ -201,6 +226,28 @@ async function voiceWith(
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
+}
+
+/**
+ * After an interruption: move the lines voiced so far next to the existing
+ * clips and record them in the manifest, so the next run reuses them (clips
+ * are matched by content hash, whatever line number they end up at).
+ */
+async function keepFinishedClips(
+  audioDir: string,
+  staging: string,
+  old: AudioManifest | null,
+  provider: string,
+  made: string[],
+  clips: Record<string, ClipEntry>,
+): Promise<void> {
+  const kept: Record<string, ClipEntry> = { ...old?.clips };
+  for (const key of made) {
+    await rename(path.join(staging, `${key}.mp3`), path.join(audioDir, `${key}.mp3`));
+    kept[key] = clips[key];
+  }
+  const manifest: AudioManifest = { version: 1, provider: old?.provider ?? provider, clips: kept };
+  await writeFile(path.join(audioDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 }
 
 /**

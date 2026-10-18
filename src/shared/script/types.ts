@@ -39,6 +39,17 @@ export interface Scene {
   pauseAfter: number;
   /** Motion effects from `[fx: ...]`, canonical names. */
   effects: string[];
+  /** Ids of described characters named in this scene's description (at most 3, in order of appearance). */
+  characters: string[];
+}
+
+/** A recurring on-screen person, from `[character: NAME | what they look like]`. */
+export interface CharacterLook {
+  /** Same form as speaker ids, e.g. "DR HALE". */
+  id: string;
+  name: string;
+  look: string;
+  sourceLine: number;
 }
 
 export interface Character {
@@ -52,6 +63,8 @@ export interface ParsedStory {
   title: string;
   scenes: Scene[];
   characters: Character[];
+  /** Described on-screen characters, kept looking the same across scenes. */
+  looks: CharacterLook[];
   issues: ParseIssue[];
   /** True when there are no error-level issues. */
   ok: boolean;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, type ReactNode } from "react";
-import type { ParsedStory, Scene } from "@/shared/script/types";
+import type { CharacterLook, ParsedStory, Scene } from "@/shared/script/types";
 import { estimateLineSec, formatDuration } from "@/shared/timing";
 import { EFFECTS, suggestEffects } from "@/shared/effects";
 import { Card, plural, SectionLabel, speakerColor } from "@/components/ui";
@@ -19,6 +19,8 @@ interface Props {
   scenesToolbar?: ReactNode;
   /** Adds an `[fx: ...]` line under the scene. */
   onAddEffects?: (scene: Scene, effects: string[]) => void;
+  /** Portrait slot for each described character. */
+  renderPortrait?: (look: CharacterLook) => ReactNode;
 }
 
 export function ScriptPreview({
@@ -30,12 +32,14 @@ export function ScriptPreview({
   renderSceneImage,
   scenesToolbar,
   onAddEffects,
+  renderPortrait,
 }: Props) {
   const colors = useMemo(
     () => new Map(parsed.characters.map((c, i) => [c.id, speakerColor(i)])),
     [parsed.characters],
   );
   const names = useMemo(() => new Map(parsed.characters.map((c) => [c.id, c.name])), [parsed.characters]);
+  const looksById = useMemo(() => new Map(parsed.looks.map((l) => [l.id, l.name])), [parsed.looks]);
 
   if (isEmpty) {
     return (
@@ -109,6 +113,38 @@ export function ScriptPreview({
         )}
       </div>
 
+      {parsed.looks.length > 0 && (
+        <div>
+          <SectionLabel>On screen ({parsed.looks.length})</SectionLabel>
+          <p className="mt-1 text-xs text-muted">
+            Each portrait is sent with every scene that names the character, so they look the same throughout.
+          </p>
+          <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+            {parsed.looks.map((l) => {
+              const sceneCount = parsed.scenes.filter((s) => s.characters.includes(l.id)).length;
+              return (
+                <li key={l.id}>
+                  <Card className="flex gap-3 p-3">
+                    {renderPortrait && <div className="w-24 shrink-0">{renderPortrait(l)}</div>}
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => onJumpToLine(l.sourceLine)}
+                        className="font-medium hover:text-accent"
+                      >
+                        👤 {l.name}
+                      </button>
+                      <p className="mt-1 line-clamp-4 text-sm text-muted">{l.look}</p>
+                      <p className="mt-1 font-mono text-[11px] text-muted">in {plural(sceneCount, "scene")}</p>
+                    </div>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SectionLabel>Scenes ({parsed.scenes.length})</SectionLabel>
@@ -138,7 +174,7 @@ export function ScriptPreview({
                     </button>
                     <span className="shrink-0 font-mono text-xs text-muted">~{formatDuration(sec)}</span>
                   </div>
-                  <SceneEffects scene={scene} onAdd={onAddEffects} />
+                  <SceneEffects scene={scene} onAdd={onAddEffects} names={looksById} />
                   <div className={renderSceneImage ? "grid gap-4 p-4 sm:grid-cols-[8.5rem_1fr]" : "px-4 py-3"}>
                     {renderSceneImage && <div className="max-w-44">{renderSceneImage(scene)}</div>}
                     {scene.lines.length === 0 ? (
@@ -189,11 +225,28 @@ export function ScriptPreview({
 }
 
 /** The scene's motion effects, and effects its description suggests (one click adds them). */
-function SceneEffects({ scene, onAdd }: { scene: Scene; onAdd?: (scene: Scene, effects: string[]) => void }) {
+function SceneEffects({
+  scene,
+  onAdd,
+  names,
+}: {
+  scene: Scene;
+  onAdd?: (scene: Scene, effects: string[]) => void;
+  names: Map<string, string>;
+}) {
   const suggested = suggestEffects(scene.description, scene.effects);
-  if (!scene.effects.length && !(onAdd && suggested.length)) return null;
+  if (!scene.effects.length && !scene.characters.length && !(onAdd && suggested.length)) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2 text-xs">
+      {scene.characters.map((id) => (
+        <span
+          key={id}
+          title="Drawn to match this character's portrait"
+          className="rounded-full border border-line px-2 py-px font-mono text-[11px] text-ink"
+        >
+          👤 {names.get(id) ?? id}
+        </span>
+      ))}
       {scene.effects.map((e) => (
         <span
           key={e}

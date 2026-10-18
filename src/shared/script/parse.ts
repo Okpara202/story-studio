@@ -2,6 +2,7 @@ import { CUES, findCue } from "../delivery.ts";
 import { EFFECTS, findEffect, MAX_EFFECTS_PER_SCENE } from "../effects.ts";
 import type {
   Character,
+  CharacterLook,
   DialogueLine,
   LinePart,
   ParseIssue,
@@ -54,9 +55,10 @@ interface RawLine {
 export function parseScript(source: string): ParsedStory {
   const rawLines = source.replace(/\r\n?/g, "\n").split("\n");
   const issues: ParseIssue[] = [];
-  const scenes: (Omit<Scene, "lines"> & { raw: RawLine[] })[] = [];
+  const scenes: (Omit<Scene, "lines" | "characters"> & { raw: RawLine[] })[] = [];
   const names = new Map<string, string>();
   const counts = new Map<string, number>();
+  const looks: CharacterLook[] = [];
 
   let title: string | null = null;
   let scene: (typeof scenes)[number] | null = null;
@@ -110,6 +112,23 @@ export function parseScript(source: string): ParsedStory {
     }
   };
 
+  const addLook = (text: string | undefined, line: number) => {
+    const bar = text?.indexOf("|") ?? -1;
+    const name = text && bar > 0 ? text.slice(0, bar).trim().replace(/\s+/g, " ") : "";
+    const look = text && bar > 0 ? text.slice(bar + 1).trim() : "";
+    if (!name || !look) {
+      warn(line, "Write characters as [character: NAME | what they look like], e.g. [character: CLARA | a girl of ten, red raincoat]. Ignored.");
+      return;
+    }
+    const id = speakerIdOf(name);
+    const existing = looks.findIndex((l) => l.id === id);
+    if (existing >= 0) {
+      warn(line, `${name} is described twice; this description is used.`);
+      looks.splice(existing, 1);
+    }
+    looks.push({ id, name, look, sourceLine: line });
+  };
+
   const addLine = (speakerName: string, text: string, cues: string[], line: number) => {
     const current = scene ?? (warn(line, "Text before the first [scene: ...]; started a scene automatically."), startScene(null, line));
     const id = speakerIdOf(speakerName);
@@ -159,6 +178,8 @@ export function parseScript(source: string): ParsedStory {
       const tag = directive[1].toLowerCase();
       if (tag === "scene") {
         startScene(directive[2]?.trim() || null, lineNo);
+      } else if (tag === "character") {
+        addLook(directive[2], lineNo);
       } else if (tag === "fx" || tag === "effect" || tag === "effects") {
         const current = scene as (typeof scenes)[number] | null;
         if (!current) warn(lineNo, "[fx: ...] goes under a [scene: ...] line; this one was ignored.");
@@ -166,7 +187,7 @@ export function parseScript(source: string): ParsedStory {
       } else if (COMING_SOON[tag]) {
         warn(lineNo, COMING_SOON[tag]);
       } else {
-        warn(lineNo, `Unknown tag [${directive[1]}]. Supported: [scene: ...], [fx: ...], [pause 2s], [music: ...], [sfx: ...]. Ignored.`);
+        warn(lineNo, `Unknown tag [${directive[1]}]. Supported: [scene: ...], [fx: ...], [character: ...], [pause 2s], [music: ...], [sfx: ...]. Ignored.`);
       }
       return;
     }
@@ -223,8 +244,14 @@ export function parseScript(source: string): ParsedStory {
       lines,
       pauseAfter: s.pauseAfter + carriedPause,
       effects: s.effects,
+      characters: charactersIn(s.description, looks, (message) => warn(s.sourceLine, message)),
     };
   });
+  for (const l of looks) {
+    if (!finished.some((s) => s.characters.includes(l.id))) {
+      warn(l.sourceLine, `${l.name} is described but no [scene: ...] names them, so the description is never used.`);
+    }
+  }
 
   const characters: Character[] = [...counts.entries()].map(([id, lineCount]) => ({
     id,
@@ -250,9 +277,33 @@ export function parseScript(source: string): ParsedStory {
     title: title ?? "",
     scenes: finished,
     characters,
+    looks,
     issues,
     ok: !issues.some((i) => i.severity === "error"),
   };
+}
+
+/** Image models take at most 4 reference pictures; 3 keeps room and keeps scenes readable. */
+export const MAX_CHARACTERS_PER_SCENE = 3;
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Described characters named in a scene description ("DR HALE" also matches "Dr. Hale"), in order of appearance. */
+function charactersIn(description: string | null, looks: CharacterLook[], warn: (message: string) => void): string[] {
+  if (!description || !looks.length) return [];
+  const found = looks
+    .map((l) => {
+      const pattern = l.name.split(" ").map(escapeRe).join("\\.?\\s+").replace(/\\\.(?!\?)/g, "\\.?");
+      const m = new RegExp(`(^|[^\\p{L}\\p{N}])${pattern}(?=$|[^\\p{L}\\p{N}])`, "iu").exec(description);
+      return m ? { id: l.id, at: m.index } : null;
+    })
+    .filter((x): x is { id: string; at: number } => x !== null)
+    .sort((a, b) => a.at - b.at)
+    .map((x) => x.id);
+  if (found.length > MAX_CHARACTERS_PER_SCENE) {
+    warn(`This scene names ${found.length} described characters; only the first ${MAX_CHARACTERS_PER_SCENE} are kept consistent.`);
+  }
+  return found.slice(0, MAX_CHARACTERS_PER_SCENE);
 }
 
 const tidy = (s: string) => s.replace(/\s+/g, " ").trim();

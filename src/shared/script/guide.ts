@@ -24,6 +24,12 @@ export const FORMAT_RULES: FormatRule[] = [
     meaning: "Motion for the scene's picture, on the line under [scene: ...]. Up to 3 effects. They move the whole picture (light, camera, haze), not single objects.",
     example: "[fx: flicker, shake]",
   },
+  {
+    syntax: "[character: NAME | looks]",
+    meaning:
+      "Describe a person who appears in several scenes, once, near the top. The app draws a reference portrait, and every [scene: ...] that names them is drawn to match it.",
+    example: "[character: CLARA | a girl of ten, pale, long black hair, yellow raincoat]",
+  },
   { syntax: "NAME: words", meaning: "A spoken line. NARRATOR tells the story; any other name is a character.", example: "CLERK: Nobody has stayed in that room in years." },
   {
     syntax: "NAME (cue): words",
@@ -68,6 +74,7 @@ export function aiPrompt(): string {
 FORMAT
 - Line 1: # Title
 - [scene: ...] starts a new scene. Describe ONE clear, concrete image for that moment: setting, key object, lighting, mood. Keep the main subject in the centre of the frame. Prefer objects, rooms, documents, silhouettes and atmosphere over detailed faces. Do not include art-style words; the style is added automatically.
+- Recurring people: if the same person is SHOWN in more than one scene, describe them once near the top: [character: NAME | age, build, hair, clothing, one distinctive detail]. Then write that exact NAME inside every [scene: ...] where they appear (e.g. [scene: CLARA standing at the end of a flooded corridor]). Keep their faces partly in shadow or turned away when possible. People who are only heard, or shown once, need no [character] line.
 - Optional motion, on the line right under a [scene: ...]: [fx: effect, effect]. Use only these effects: ${effects}. Add motion only where the scene really calls for it (about one scene in three), at most two effects.
 - NAME: text is a spoken line. Use NARRATOR for narration. Other characters use a short name in capitals, the same spelling every time (e.g. CLERK, MOTHER, DR HALE).
 - Delivery cue, optional, in brackets after the name: NAME (cue): text. Use only these cues: ${cues}. Combine at most two with a comma. Most lines need no cue.

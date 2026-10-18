@@ -158,7 +158,7 @@ export async function deleteStory(store: ObjectStore, id: string): Promise<numbe
 }
 
 /** Folders holding a story's large generated files. The script (job.json) is always kept. */
-export const MEDIA_FOLDERS = ["audio/", "images/", "output/"] as const;
+export const MEDIA_FOLDERS = ["audio/", "images/", "characters/", "output/"] as const;
 
 /** Delete a story's voices, images and videos but keep its script and settings. Returns files deleted. */
 export async function freeStorySpace(store: ObjectStore, id: string): Promise<number> {
@@ -188,6 +188,7 @@ export interface StoryMedia {
 const MEDIA_KIND: Record<(typeof MEDIA_FOLDERS)[number], MediaGroup["kind"]> = {
   "output/": "videos",
   "images/": "images",
+  "characters/": "images",
   "audio/": "voices",
 };
 
@@ -206,6 +207,7 @@ export async function storyMedia(store: ObjectStore, id: string): Promise<StoryM
     const g = groups.get(kind) ?? { kind, files: 0, bytes: 0 };
     g.bytes += size;
     if (rest.endsWith(".json")) {
+      // Scene image and portrait records: both say whether the owner uploaded the picture.
       if (kind === "images") records.push(key);
     } else {
       g.files++;

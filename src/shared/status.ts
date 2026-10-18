@@ -48,6 +48,21 @@ export interface JobStatus {
   finishedAt?: string;
 }
 
+/** Rough share of a run's time per stage, so the overall percentage moves at an even pace. */
+const STAGE_WEIGHTS: Record<JobStage, number> = { voices: 0.35, images: 0.2, render: 0.45 };
+const STAGE_ORDER: JobStage[] = ["voices", "images", "render"];
+
+/** Whole-run progress, 0..100: finished stages count in full, the current one by its own progress. */
+export function overallPercent(status: Pick<JobStatus, "state" | "stage" | "progress">): number {
+  if (status.state === "done") return 100;
+  if (!status.stage) return 0;
+  const i = STAGE_ORDER.indexOf(status.stage);
+  const before = STAGE_ORDER.slice(0, i).reduce((n, s) => n + STAGE_WEIGHTS[s], 0);
+  const within = Math.min(1, Math.max(0, status.progress)) * STAGE_WEIGHTS[status.stage];
+  // Never show 100% before the run has really finished.
+  return Math.min(99, Math.floor((before + within) * 100));
+}
+
 export type StoryStatus = "draft" | "generating" | "ready" | "failed" | "downloaded";
 
 export function storyStatusOf(job: Pick<JobFile, "downloadedAt">, status: JobStatus | null): StoryStatus {

@@ -15,11 +15,14 @@ interface Props {
   onGenerate: (newVariant: boolean) => void;
   onUpload: (file: File) => void;
   onRemove: () => void;
+  /** What the picture is, for screen readers; defaults to "scene N". */
+  label?: string;
 }
 
 const ACCEPT = "image/png,image/jpeg,image/webp";
 
-export function SceneImage({ sceneNo, state, view, busy, error, canGenerate, onGenerate, onUpload, onRemove }: Props) {
+export function SceneImage({ sceneNo, state, view, busy, error, canGenerate, onGenerate, onUpload, onRemove, label }: Props) {
+  const name = label ?? `scene ${sceneNo}`;
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const disabled = Boolean(busy);
@@ -50,7 +53,7 @@ export function SceneImage({ sceneNo, state, view, busy, error, canGenerate, onG
         {view ? (
           // Presigned storage URLs change per request, so next/image optimisation does not apply.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={view.url} alt={`Image for scene ${sceneNo}`} className="size-full object-cover" />
+          <img src={view.url} alt={`Image for ${name}`} className="size-full object-cover" />
         ) : (
           <div className="grid size-full place-items-center p-2 text-center text-xs text-muted">
             {dragOver ? "Drop to upload" : "No image yet"}
@@ -105,7 +108,7 @@ export function SceneImage({ sceneNo, state, view, busy, error, canGenerate, onG
           {view ? "Replace" : "Upload"}
         </SmallButton>
         {view && (
-          <SmallButton disabled={disabled} onClick={onRemove} aria-label={`Remove image for scene ${sceneNo}`}>
+          <SmallButton disabled={disabled} onClick={onRemove} aria-label={`Remove image for ${name}`}>
             Remove
           </SmallButton>
         )}

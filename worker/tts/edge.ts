@@ -8,12 +8,27 @@ export interface EdgeOptions {
   attempts: number;
   /** First retry delay; doubles each attempt. */
   backoffMs: number;
+  /** First retry delay after a rate limit (HTTP 429); doubles each attempt. */
+  rateLimitBackoffMs: number;
   timeoutMs: number;
   /** Pause between requests. Microsoft rate-limits bursts (HTTP 429). */
   spacingMs: number;
+  /** Pause between requests once a rate limit has been hit in this run. */
+  slowSpacingMs: number;
 }
 
-const DEFAULTS: EdgeOptions = { attempts: 4, backoffMs: 2000, timeoutMs: 30000, spacingMs: 250 };
+// A 12-minute story (198 lines) hit 429 from GitHub's runners with 2/4/8 s retries.
+// After a 429: 15 s, 30 s, 60 s, 120 s (about 4 minutes), then every request spaced out.
+const DEFAULTS: EdgeOptions = {
+  attempts: 5,
+  backoffMs: 2000,
+  rateLimitBackoffMs: 15000,
+  timeoutMs: 30000,
+  spacingMs: 250,
+  slowSpacingMs: 1500,
+};
+
+export const isRateLimit = (message: string) => /\b429\b|too many requests|rate limit/i.test(message);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -27,9 +42,11 @@ export class EdgeProvider implements TtsProvider {
   readonly nativeProsody = true;
   private readonly opts: EdgeOptions;
   private lastRequest = 0;
+  private spacing: number;
 
   constructor(opts: Partial<EdgeOptions> = {}) {
     this.opts = { ...DEFAULTS, ...opts };
+    this.spacing = this.opts.spacingMs;
   }
 
   async available(): Promise<Availability> {
@@ -41,7 +58,7 @@ export class EdgeProvider implements TtsProvider {
     const outFile = `${outBase}.mp3`;
     let lastError = "";
     for (let attempt = 1; attempt <= this.opts.attempts; attempt++) {
-      const wait = this.lastRequest + this.opts.spacingMs - Date.now();
+      const wait = this.lastRequest + this.spacing - Date.now();
       if (wait > 0) await sleep(wait);
       this.lastRequest = Date.now();
       try {
@@ -61,7 +78,11 @@ export class EdgeProvider implements TtsProvider {
         return outFile;
       } catch (err) {
         lastError = errorMessage(err);
-        if (attempt < this.opts.attempts) await sleep(this.opts.backoffMs * 2 ** (attempt - 1));
+        const limited = isRateLimit(lastError);
+        // Once throttled, stay slower for the rest of the story instead of hitting the limit again.
+        if (limited) this.spacing = Math.max(this.spacing, this.opts.slowSpacingMs);
+        const base = limited ? this.opts.rateLimitBackoffMs : this.opts.backoffMs;
+        if (attempt < this.opts.attempts) await sleep(base * 2 ** (attempt - 1));
       }
     }
     throw new Error(`Edge TTS failed after ${this.opts.attempts} attempts: ${lastError}`);

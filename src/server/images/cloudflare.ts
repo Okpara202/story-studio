@@ -5,7 +5,10 @@ import { ConfigError, QuotaError, type GeneratedImage, type ImageOptions, type I
  * be used commercially. Tested live 2026-10-18.
  */
 export const CLOUDFLARE_MODELS = {
-  /** FLUX.2 [klein] 4B: better texture, any size (we use 4:3), seeds work, ~12 s. Multipart request. */
+  /**
+   * FLUX.2 [klein] 4B: better texture, any size (we use 4:3), seeds work, ~12 s. Multipart request.
+   * Takes up to 4 reference images (input_image_0..3, under 512x512) for keeping characters consistent.
+   */
   flux2: {
     name: "cloudflare-flux2",
     model: "@cf/black-forest-labs/flux-2-klein-4b",
@@ -58,14 +61,18 @@ export class CloudflareImageProvider implements ImageProvider {
     this.typicalSeconds = this.preset.typicalSeconds;
   }
 
-  private body(prompt: string, seed: number): FormData | string {
+  private body(prompt: string, opts: ImageOptions): FormData | string {
     if (!this.preset.multipart) return JSON.stringify({ prompt, steps: 6 });
     const form = new FormData();
     form.append("prompt", prompt);
-    form.append("width", "1024");
-    form.append("height", "768");
+    form.append("width", String(opts.size?.width ?? 1024));
+    form.append("height", String(opts.size?.height ?? 768));
     form.append("steps", "4");
-    form.append("seed", String(seed));
+    form.append("seed", String(opts.seed));
+    // FLUX.2 multi-reference: up to 4 pictures, named exactly input_image_0..3.
+    (opts.references ?? []).slice(0, 4).forEach((data, i) => {
+      form.append(`input_image_${i}`, new Blob([new Uint8Array(data)], { type: "image/jpeg" }), `ref-${i}.jpg`);
+    });
     return form;
   }
 
@@ -81,7 +88,7 @@ export class CloudflareImageProvider implements ImageProvider {
         res = await fetch(url, {
           method: "POST",
           headers,
-          body: this.body(prompt, opts.seed),
+          body: this.body(prompt, opts),
           signal: AbortSignal.timeout(120_000),
         });
       } catch (err) {

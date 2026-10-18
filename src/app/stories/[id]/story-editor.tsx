@@ -183,6 +183,7 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
             view={generation.view}
             onRetry={generate}
             retrying={generation.starting}
+            reviewHref={`/stories/${job.jobId}/review`}
             onJumpToScene={(n) => {
               const scene = parsed.scenes.find((s) => s.index === n);
               if (scene) jumpToLine(scene.sourceLine);

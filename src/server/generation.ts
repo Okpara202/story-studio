@@ -30,7 +30,8 @@ export async function startGeneration(
   }
 
   const github = opts.github ?? githubConfig();
-  await updateStory(store, id, { style: await getStyle(store) });
+  // A new run brings the files back, so the story is no longer "downloaded".
+  await updateStory(store, id, { style: await getStyle(store), downloadedAt: null });
   const now = new Date().toISOString();
   const queued: JobStatus = {
     state: "queued",

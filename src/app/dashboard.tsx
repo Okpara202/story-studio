@@ -113,7 +113,10 @@ export function Dashboard({ stories, storageKind }: Props) {
 
 function StoryCard({ story }: { story: StorySummary }) {
   return (
-    <Link href={`/stories/${story.id}`} className="group block h-full rounded-card focus-visible:outline-offset-4">
+    <Link
+      href={story.status === "ready" ? `/stories/${story.id}/review` : `/stories/${story.id}`}
+      className="group block h-full rounded-card focus-visible:outline-offset-4"
+    >
       <Card className="flex h-full flex-col p-5 transition group-hover:border-muted">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-serif text-xl leading-snug">{story.title || "Untitled story"}</h3>

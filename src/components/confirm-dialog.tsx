@@ -12,6 +12,8 @@ interface Props {
   /** Destructive actions get a red confirm button. */
   danger?: boolean;
   busy?: boolean;
+  /** Keeps Confirm disabled, e.g. while the dialog is still loading what it describes. */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -20,7 +22,17 @@ interface Props {
  * Accessible confirmation built on <dialog>: focus is trapped, Esc cancels,
  * and Cancel is focused first so Enter never deletes by accident.
  */
-export function ConfirmDialog({ open, title, children, confirmLabel, danger, busy, onConfirm, onCancel }: Props) {
+export function ConfirmDialog({
+  open,
+  title,
+  children,
+  confirmLabel,
+  danger,
+  busy,
+  confirmDisabled,
+  onConfirm,
+  onCancel,
+}: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -55,7 +67,7 @@ export function ConfirmDialog({ open, title, children, confirmLabel, danger, bus
         <Button ref={cancelRef} onClick={onCancel} disabled={busy}>
           Cancel
         </Button>
-        <Button variant={danger ? "danger" : "primary"} onClick={onConfirm} disabled={busy}>
+        <Button variant={danger ? "danger" : "primary"} onClick={onConfirm} disabled={busy || confirmDisabled}>
           {busy ? "Working…" : confirmLabel}
         </Button>
       </div>

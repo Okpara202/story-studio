@@ -10,11 +10,14 @@ import {
   getStory,
   getStyle,
   keys,
+  markDownloaded,
   MAX_MUSIC_BYTES,
   MUSIC_TYPES,
   musicKey,
   saveStyle,
+  storyMedia,
   updateStory,
+  type StoryMedia,
 } from "@/server/jobs";
 import {
   generateSceneImage,
@@ -193,6 +196,28 @@ export async function freeStorySpaceAction(id: string): Promise<Result<{ deleted
   await requireSession();
   try {
     const deleted = await freeStorySpace(getStore(), v.str(id, "Story id", 40));
+    refresh();
+    return { deleted };
+  } catch (err) {
+    return errorOf(err);
+  }
+}
+
+/** What "Mark as downloaded" would delete, for its confirmation dialog. */
+export async function storyMediaAction(id: string): Promise<Result<StoryMedia>> {
+  await requireSession();
+  try {
+    return await storyMedia(getStore(), v.str(id, "Story id", 40));
+  } catch (err) {
+    return errorOf(err);
+  }
+}
+
+/** The owner has the videos: delete the story's large files and mark it downloaded. */
+export async function markDownloadedAction(id: string): Promise<Result<{ deleted: number }>> {
+  await requireSession();
+  try {
+    const deleted = await markDownloaded(getStore(), v.str(id, "Story id", 40));
     refresh();
     return { deleted };
   } catch (err) {

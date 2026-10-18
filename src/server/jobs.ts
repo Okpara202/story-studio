@@ -122,7 +122,8 @@ export interface StoryPatch {
   voices?: Record<string, string>;
   /** Channel style snapshot taken when generation starts, so later style edits don't change this video. */
   style?: StyleSettings;
-  downloadedAt?: string;
+  /** Null clears it (a new run makes the story "ready" again). */
+  downloadedAt?: string | null;
 }
 
 export async function getStatus(store: ObjectStore, id: string): Promise<JobStatus | null> {
@@ -143,6 +144,7 @@ export async function updateStory(store: ObjectStore, id: string, patch: StoryPa
   const defined = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
   const next: JobFile = { ...job, ...defined, updatedAt: new Date().toISOString() };
   if (patch.script !== undefined) next.title = parseScript(patch.script).title;
+  if (patch.downloadedAt === null) delete next.downloadedAt;
   await putJson(store, keys.job(id), next);
   return next;
 }
@@ -162,6 +164,77 @@ export async function freeStorySpace(store: ObjectStore, id: string): Promise<nu
   for (const folder of MEDIA_FOLDERS) deleted += await store.deletePrefix(`${keys.jobDir(id)}${folder}`);
   // Progress from a finished run refers to files that no longer exist.
   await store.delete(keys.status(id));
+  return deleted;
+}
+
+export interface MediaGroup {
+  kind: "videos" | "images" | "voices";
+  /** Files a person would count: videos, pictures, voice clips (not the small records beside them). */
+  files: number;
+  bytes: number;
+}
+
+/** What freeing a story's space would delete, for the confirmation dialog. */
+export interface StoryMedia {
+  groups: MediaGroup[];
+  totalBytes: number;
+  /** Images the owner uploaded: they can't be remade, only uploaded again. */
+  uploadedImages: number;
+}
+
+const MEDIA_KIND: Record<(typeof MEDIA_FOLDERS)[number], MediaGroup["kind"]> = {
+  "output/": "videos",
+  "images/": "images",
+  "audio/": "voices",
+};
+
+export async function storyMedia(store: ObjectStore, id: string): Promise<StoryMedia> {
+  assertJobId(id);
+  const dir = keys.jobDir(id);
+  const objects = await store.listObjects(dir);
+  const groups = new Map<MediaGroup["kind"], MediaGroup>();
+  let uploadedImages = 0;
+  const records: string[] = [];
+  for (const { key, size } of objects) {
+    const rest = key.slice(dir.length);
+    const folder = MEDIA_FOLDERS.find((f) => rest.startsWith(f));
+    if (!folder) continue;
+    const kind = MEDIA_KIND[folder];
+    const g = groups.get(kind) ?? { kind, files: 0, bytes: 0 };
+    g.bytes += size;
+    if (rest.endsWith(".json")) {
+      if (kind === "images") records.push(key);
+    } else {
+      g.files++;
+    }
+    groups.set(kind, g);
+  }
+  await Promise.all(
+    records.map(async (key) => {
+      const text = await store.getText(key);
+      try {
+        if (text && (JSON.parse(text) as { source?: string }).source === "upload") uploadedImages++;
+      } catch {
+        // A damaged record is deleted with the rest.
+      }
+    }),
+  );
+  const order: MediaGroup["kind"][] = ["videos", "images", "voices"];
+  const list = order.map((k) => groups.get(k)).filter((g): g is MediaGroup => g !== undefined);
+  return { groups: list, totalBytes: list.reduce((n, g) => n + g.bytes, 0), uploadedImages };
+}
+
+/**
+ * The owner has the videos on their computer: delete the story's large files
+ * and mark it downloaded. Refused while a run is using those files.
+ */
+export async function markDownloaded(store: ObjectStore, id: string, now = new Date()): Promise<number> {
+  const status = await getStatus(store, id);
+  if (status && (status.state === "queued" || status.state === "running")) {
+    throw new Error("This story is being generated. Wait for it to finish first.");
+  }
+  const deleted = await freeStorySpace(store, id);
+  await updateStory(store, id, { downloadedAt: now.toISOString() });
   return deleted;
 }
 

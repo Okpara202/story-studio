@@ -13,9 +13,11 @@ import {
   getStyle,
   keys,
   listStories,
+  markDownloaded,
   musicKey,
   newJobId,
   saveStyle,
+  storyMedia,
   updateStory,
 } from "./jobs.ts";
 import { DEFAULT_STYLE } from "../shared/job.ts";
@@ -129,6 +131,47 @@ test("free space deletes voices, images and videos but keeps the script", () =>
     assert.equal(await freeStorySpace(store, job.jobId), 4);
     assert.deepEqual((await store.list(dir)).keys, [keys.job(job.jobId)]);
     assert.equal((await getStory(store, job.jobId))?.job.title, "Keep me");
+  }));
+
+test("story media lists what free space would delete, counting uploads", () =>
+  withStore(async (store) => {
+    const job = await createStory(store, "# M\n[scene: a]\nHi.");
+    const dir = keys.jobDir(job.jobId);
+    await store.putBuffer(dir + "output/full-16x9.mp4", Buffer.alloc(4000));
+    await store.putBuffer(dir + "output/full-9x16.mp4", Buffer.alloc(3000));
+    await store.putBuffer(dir + "images/scene-01.jpg", Buffer.alloc(500));
+    await store.putText(dir + "images/scene-01.json", JSON.stringify({ source: "upload" }));
+    await store.putBuffer(dir + "images/scene-02.png", Buffer.alloc(400));
+    await store.putText(dir + "images/scene-02.json", JSON.stringify({ source: "generated" }));
+    await store.putBuffer(dir + "audio/s01-l01.mp3", Buffer.alloc(100));
+    const media = await storyMedia(store, job.jobId);
+    assert.deepEqual(
+      media.groups.map((g) => [g.kind, g.files]),
+      [["videos", 2], ["images", 2], ["voices", 1]],
+    );
+    assert.equal(media.groups[0].bytes, 7000);
+    assert.equal(media.uploadedImages, 1);
+    assert.ok(media.totalBytes > 8000);
+  }));
+
+test("mark as downloaded frees space, keeps the script, and a new run clears it", () =>
+  withStore(async (store) => {
+    const job = await createStory(store, "# D\n[scene: a]\nHi.");
+    const dir = keys.jobDir(job.jobId);
+    await store.putText(dir + "output/full-16x9.mp4", "x");
+    await store.putText(keys.status(job.jobId), JSON.stringify({ state: "running" }));
+    await assert.rejects(markDownloaded(store, job.jobId), /being generated/);
+    assert.ok((await store.list(dir)).keys.includes(dir + "output/full-16x9.mp4"));
+
+    await store.putText(keys.status(job.jobId), JSON.stringify({ state: "done" }));
+    assert.equal(await markDownloaded(store, job.jobId), 1);
+    const after = await getStory(store, job.jobId);
+    assert.equal(after?.storyStatus, "downloaded");
+    assert.deepEqual((await store.list(dir)).keys, [keys.job(job.jobId)]);
+
+    await updateStory(store, job.jobId, { downloadedAt: null });
+    const job2 = (await getStory(store, job.jobId))?.job;
+    assert.equal(job2 && "downloadedAt" in job2, false);
   }));
 
 test("storage by story groups sizes per story and kind, largest first", () =>

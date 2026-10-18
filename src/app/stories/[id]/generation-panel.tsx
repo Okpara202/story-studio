@@ -4,7 +4,7 @@ import type { GenerationView } from "@/server/generation";
 import type { JobStage } from "@/shared/status";
 import { formatDuration } from "@/shared/timing";
 import { formatAmount } from "@/shared/usage";
-import { Button, Card } from "@/components/ui";
+import { Button, ButtonLink, Card } from "@/components/ui";
 
 const STAGES: { id: JobStage; label: string }[] = [
   { id: "voices", label: "Voices" },
@@ -17,10 +17,12 @@ interface Props {
   onRetry: () => void;
   retrying: boolean;
   onJumpToScene: (sceneNo: number) => void;
+  /** Where the finished videos are watched and published. */
+  reviewHref?: string;
 }
 
-/** Live progress of a cloud run, its errors, and the finished videos. */
-export function GenerationPanel({ view, onRetry, retrying, onJumpToScene }: Props) {
+/** Live progress of a cloud run, its errors, and a summary of the finished videos. */
+export function GenerationPanel({ view, onRetry, retrying, onJumpToScene, reviewHref }: Props) {
   const s = view.status;
   if (!s) return null;
   const stageIndex = s.stage ? STAGES.findIndex((x) => x.id === s.stage) : -1;
@@ -29,34 +31,27 @@ export function GenerationPanel({ view, onRetry, retrying, onJumpToScene }: Prop
     return (
       <Card className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h2 className="font-serif text-xl">Your videos are ready</h2>
-            <p className="text-sm text-muted">Watch them here, then download. Upload stays in your hands.</p>
-          </div>
-          <Button onClick={onRetry} disabled={retrying} className="h-9">
-            {retrying ? "Starting…" : "Generate again"}
-          </Button>
-        </div>
-        <div className="mt-5 flex flex-wrap items-start gap-5">
-          {view.outputs.map((o) => (
-            <figure key={o.format} className={o.format === "9x16" ? "w-full max-w-[220px]" : "min-w-0 flex-1 basis-80"}>
-              <video
-                controls
-                preload="metadata"
-                src={o.url}
-                className={`w-full rounded-control border border-line bg-black ${o.format === "9x16" ? "aspect-[9/16]" : "aspect-video"}`}
-              />
-              <figcaption className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="font-mono text-xs text-muted">
-                  {o.format === "9x16" ? "9:16 · Shorts, Reels, TikTok" : "16:9 · YouTube"} · {formatDuration(o.durationSec)} ·{" "}
+            <p className="flex flex-wrap gap-x-5 font-mono text-xs text-muted">
+              {view.outputs.map((o) => (
+                <span key={o.format}>
+                  <span className="text-ink">{o.format === "9x16" ? "9:16" : "16:9"}</span> {formatDuration(o.durationSec)} ·{" "}
                   {formatAmount(o.bytes, "bytes")}
                 </span>
-                <a href={o.downloadUrl} className="text-accent underline-offset-4 hover:underline">
-                  Download
-                </a>
-              </figcaption>
-            </figure>
-          ))}
+              ))}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onRetry} disabled={retrying} className="h-9">
+              {retrying ? "Starting…" : "Generate again"}
+            </Button>
+            {reviewHref && (
+              <ButtonLink variant="primary" href={reviewHref} className="h-9">
+                Review &amp; publish →
+              </ButtonLink>
+            )}
+          </div>
         </div>
         {!!s.warnings?.length && (
           <ul className="mt-4 space-y-1 text-xs text-muted">

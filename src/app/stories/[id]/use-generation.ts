@@ -13,9 +13,9 @@ const isActive = (v: GenerationView | null) => v?.status?.state === "queued" || 
  * while active. When a run ends, the page refreshes so new images and the
  * status chip show up.
  */
-export function useGeneration(jobId: string) {
+export function useGeneration(jobId: string, initial: GenerationView | null = null) {
   const router = useRouter();
-  const [view, setView] = useState<GenerationView | null>(null);
+  const [view, setView] = useState<GenerationView | null>(initial);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wasActive = useRef(false);

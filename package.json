@@ -2,14 +2,31 @@
   "name": "project-youtube",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\" \"worker/**/*.test.ts\"",
+    "sample-job": "node worker/dev/make-sample-job.ts",
+    "render": "node worker/render.ts",
+    "voices": "node worker/voices.ts",
+    "voice-samples": "node worker/dev/make-voice-samples.ts",
+    "check:storage": "node --env-file-if-exists=.env.local worker/dev/check-storage.ts",
+    "images": "node --env-file-if-exists=.env.local worker/images.ts",
+    "check:secrets": "node tools/check-secrets.mjs --all",
+    "setup:hooks": "git config core.hooksPath .githooks"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "next": "16.4.2",
+    "node-edge-tts": "^1.2.11",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -20,6 +37,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
+    "ffmpeg-static": "^5.3.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

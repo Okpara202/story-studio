@@ -1,0 +1,7 @@
+# Shell scripts and hooks must keep LF line endings, even on Windows checkouts.
+.githooks/* text eol=lf
+*.sh text eol=lf
+
+# Audio/video samples are binary.
+*.mp3 binary
+*.mp4 binary

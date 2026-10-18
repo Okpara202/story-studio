@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuse commits that contain keys. Enable once per clone: npm run setup:hooks
+exec node tools/check-secrets.mjs

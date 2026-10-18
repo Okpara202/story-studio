@@ -22,7 +22,14 @@
 
 # misc
 .DS_Store
+
+# keys and certificates
 *.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
 
 # debug
 npm-debug.log*
@@ -30,7 +37,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files: all of them, real values live only in .env.local (see README for the names)
 .env*
 
 # vercel
@@ -39,3 +46,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local job folders and renders
+/.local/
+
+# private working notes: kept on this computer, never published
+/CLAUDE.md
+/PROGRESS.md
+/.claude/

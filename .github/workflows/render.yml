@@ -34,8 +34,10 @@ jobs:
           node-version: 24
           cache: npm
 
+      # Not `npm ci`: a lock file written on Windows misses some Linux-only optional
+      # packages (npm bug), which makes `npm ci` refuse. `--no-save` keeps the lock file as is.
       - name: Install
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund --no-save
 
       - uses: actions/setup-python@v6
         with:

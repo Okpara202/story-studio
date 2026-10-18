@@ -1,0 +1,39 @@
+name: Hello
+
+# Smoke test: proves the app can start a cloud run and the runner can reach storage.
+run-name: hello ${{ inputs.job_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Story id to echo back
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Say hello
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+        run: |
+          echo "Hello from the cloud worker for story $JOB_ID"
+          echo "Runner: $(uname -sm), $(nproc) CPUs, $(free -g | awk '/Mem/{print $2}') GB RAM"
+      - name: Check storage secrets are present (values never printed)
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          missing=0
+          for v in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET CLOUDFLARE_API_TOKEN; do
+            if [ -n "${!v}" ]; then echo "  $v: set"; else echo "  $v: MISSING"; missing=1; fi
+          done
+          exit $missing

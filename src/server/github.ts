@@ -68,6 +68,29 @@ export interface WorkflowRun {
   title: string;
 }
 
+/**
+ * Approximate Actions minutes used by this repository's finished runs since `since`.
+ * GitHub bills each job rounded up to the minute; we round each run up the same way.
+ */
+export async function actionsMinutesSince(cfg: GitHubConfig, since: Date): Promise<{ minutes: number; runs: number }> {
+  let minutes = 0;
+  let runs = 0;
+  const day = since.toISOString().slice(0, 10);
+  for (let page = 1; page <= 10; page++) {
+    const res = await gh(cfg, `/actions/runs?status=completed&per_page=100&page=${page}&created=%3E%3D${day}`);
+    const body = (await res.json()) as { workflow_runs?: { run_started_at?: string; updated_at: string }[] };
+    const list = body.workflow_runs ?? [];
+    for (const r of list) {
+      if (!r.run_started_at) continue;
+      const ms = Date.parse(r.updated_at) - Date.parse(r.run_started_at);
+      minutes += Math.max(1, Math.ceil(ms / 60_000));
+      runs++;
+    }
+    if (list.length < 100) break;
+  }
+  return { minutes, runs };
+}
+
 /** Recent runs of a workflow, newest first. */
 export async function listRuns(cfg: GitHubConfig, workflow: string, perPage = 10): Promise<WorkflowRun[]> {
   const res = await gh(cfg, `/actions/workflows/${workflow}/runs?per_page=${perPage}`);

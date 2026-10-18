@@ -17,6 +17,8 @@ import { deleteStoryAction, saveStoryAction } from "../../actions";
 import { ScriptPreview } from "./script-preview";
 import { SceneImage } from "./scene-image";
 import { useSceneImages } from "./use-scene-images";
+import { useGeneration } from "./use-generation";
+import { GenerationPanel } from "./generation-panel";
 
 interface Props {
   job: JobFile;
@@ -97,6 +99,10 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
     saveStoryAction(job.jobId, { voices: next }).catch(() => setSaveError(true));
   };
 
+  const generation = useGeneration(job.jobId);
+  // The worker reads the saved script, so pending edits are saved first.
+  const generate = () => void generation.start(flushSave);
+
   const jumpToLine = (line: number) => {
     const el = textareaRef.current;
     if (!el) return;
@@ -120,7 +126,7 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
   const isEmpty = script.trim() === "";
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col px-4 pb-28 pt-6 sm:px-6">
+    <div className="mx-auto flex max-w-6xl flex-col px-4 pb-28 pt-6 sm:px-6 lg:pb-20">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <Link href="/" className="text-sm text-muted hover:text-ink">
@@ -171,9 +177,23 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
         ))}
       </div>
 
-      <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      {generation.view?.status && (
+        <div className="mt-5">
+          <GenerationPanel
+            view={generation.view}
+            onRetry={generate}
+            retrying={generation.starting}
+            onJumpToScene={(n) => {
+              const scene = parsed.scenes.find((s) => s.index === n);
+              if (scene) jumpToLine(scene.sourceLine);
+            }}
+          />
+        </div>
+      )}
+
+      <div className="mt-5 grid gap-6 lg:h-[calc(100dvh-14.5rem)] lg:min-h-[28rem] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         {/* Script pane */}
-        <section aria-label="Script" className={`${tab === "script" ? "flex" : "hidden"} min-w-0 flex-col lg:flex`}>
+        <section aria-label="Script" className={`${tab === "script" ? "flex" : "hidden"} relative min-w-0 flex-col lg:flex lg:min-h-0`}>
           <label htmlFor="script" className="sr-only">
             Story script
           </label>
@@ -184,9 +204,9 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
             onChange={(e) => setScript(e.target.value)}
             spellCheck
             placeholder={"# Your story title\n[scene: what the viewer sees]\nNARRATOR: The first line of your story."}
-            className="min-h-[60vh] w-full flex-1 resize-y rounded-card border border-line bg-surface p-5 font-mono text-[14px] leading-6 text-ink placeholder:text-muted/60 focus:border-accent/50 focus:outline-none lg:min-h-[calc(100dvh-14rem)]"
+            className="min-h-[60vh] w-full flex-1 resize-y rounded-card lg:min-h-0 lg:resize-none border border-line bg-surface p-5 font-mono text-[14px] leading-6 text-ink placeholder:text-muted/60 focus:border-accent/50 focus:outline-none"
           />
-          <details className="mt-3 rounded-card border border-line bg-surface px-4 py-3 text-sm" open={isEmpty}>
+          <details className="mt-3 max-h-48 shrink-0 overflow-y-auto rounded-card border border-line bg-surface px-4 py-3 text-sm" open={isEmpty}>
             <summary className="cursor-pointer text-muted hover:text-ink">Script format</summary>
             <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-[auto_1fr]">
               {SCRIPT_CHEATSHEET.map((row) => (
@@ -200,7 +220,7 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
         </section>
 
         {/* Preview pane */}
-        <section aria-label="Preview" className={`${tab === "preview" ? "block" : "hidden"} min-w-0 lg:block`}>
+        <section aria-label="Preview" className={`${tab === "preview" ? "block" : "hidden"} relative min-w-0 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-2 [scrollbar-gutter:stable] [scrollbar-width:thin]`}>
           <ScriptPreview
             parsed={parsed}
             isEmpty={isEmpty}
@@ -278,11 +298,29 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
             </div>
           </dl>
           <div className="ml-auto flex items-center gap-3">
-            <span className="hidden text-xs text-muted md:inline">
-              {errors > 0 ? `Fix ${errors} error${errors > 1 ? "s" : ""} to continue` : "Generation is not connected yet"}
+            <span className="hidden text-xs md:inline">
+              {generation.error ? (
+                <span className="text-danger">{generation.error}</span>
+              ) : errors > 0 ? (
+                <span className="text-muted">Fix {plural(errors, "error")} to continue</span>
+              ) : generation.active ? (
+                <span className="text-muted">Running in the cloud…</span>
+              ) : (
+                <span className="text-muted">Voices, images and both videos, in the cloud</span>
+              )}
             </span>
-            <Button variant="primary" disabled title="Generation is connected in a later build step">
-              Generate video
+            <Button
+              variant="primary"
+              disabled={errors > 0 || generation.active || generation.starting || isEmpty}
+              onClick={generate}
+            >
+              {generation.starting
+                ? "Starting…"
+                : generation.active
+                  ? "Generating…"
+                  : generation.view?.status?.state === "done"
+                    ? "Generate again"
+                    : "Generate video"}
             </Button>
           </div>
         </div>

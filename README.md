@@ -14,10 +14,10 @@ A private studio for a faceless storytelling channel. It turns a written story i
 
 ## Status
 
-In active development. Not open for contributions.
+In active development, and open to contributions. If you would like to help, get in touch first.
 
-## Access
+## Contact
 
-This is a private tool. To request access, contact the owner through GitHub.
+To use the app or to contribute, email **okparafavour202@gmail.com**.
 
 © All rights reserved. No licence is granted to use, copy or modify this code.

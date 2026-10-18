@@ -120,7 +120,19 @@ export async function createStory(store: ObjectStore, script = "", now = new Dat
 export interface StoryPatch {
   script?: string;
   voices?: Record<string, string>;
+  /** Channel style snapshot taken when generation starts, so later style edits don't change this video. */
+  style?: StyleSettings;
   downloadedAt?: string;
+}
+
+export async function getStatus(store: ObjectStore, id: string): Promise<JobStatus | null> {
+  assertJobId(id);
+  return getJson<JobStatus>(store, keys.status(id));
+}
+
+export async function putStatus(store: ObjectStore, id: string, status: JobStatus): Promise<void> {
+  assertJobId(id);
+  await putJson(store, keys.status(id), status);
 }
 
 export async function updateStory(store: ObjectStore, id: string, patch: StoryPatch): Promise<JobFile> {

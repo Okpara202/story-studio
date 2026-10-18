@@ -9,6 +9,7 @@ import {
 import type { ObjectStore } from "../storage/types.ts";
 import { aiNeuronsSince, NotAuthorizedError, r2OperationsSince, r2StoredBytes } from "./cloudflare-analytics.ts";
 import { readLedger } from "./ledger.ts";
+import { actionsMinutesSince, githubConfig, type GitHubConfig } from "../github.ts";
 
 export interface UsageReport {
   meters: Meter[];
@@ -43,12 +44,21 @@ export async function collectUsage(
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const ai = token && accountId ? { token, accountId } : null;
 
-  const [ops, stored, aiUsed, ledger] = await Promise.all([
+  let gh: GitHubConfig | null = null;
+  try {
+    gh = githubConfig(env);
+  } catch {
+    gh = null;
+  }
+
+  const [ops, stored, aiUsed, ledger, actions] = await Promise.all([
     cf ? settle(r2OperationsSince(cf, monthStart, now)) : null,
     cf ? settle(r2StoredBytes(cf)) : null,
     ai ? settle(aiNeuronsSince(ai, dayStart, now)) : null,
     readLedger(store, now),
+    gh ? settle(actionsMinutesSince(gh, monthStart)) : null,
   ]);
+  const actionsUsed = actions !== null && !(actions instanceof Error) ? actions : null;
   const aiMeasured = aiUsed !== null && !(aiUsed instanceof Error) ? aiUsed : null;
   const opsOk = ops !== null && !(ops instanceof Error) ? ops : null;
   const analyticsConnected = opsOk !== null;
@@ -131,13 +141,17 @@ export async function collectUsage(
     {
       id: "actions-minutes",
       label: "Cloud rendering minutes",
-      usedFor: "GitHub Actions time spent voicing, drawing and rendering",
-      used: 0,
+      usedFor: actionsUsed
+        ? `${actionsUsed.runs} cloud run${actionsUsed.runs === 1 ? "" : "s"} this month`
+        : "GitHub Actions time spent voicing, drawing and rendering",
+      used: actionsUsed?.minutes ?? 0,
       limit: FREE_LIMITS.actionsMinutes,
       unit: "minutes",
       resetsAt: monthReset,
-      source: "not-connected",
-      note: "Connected when cloud rendering is set up (build step 7). The repository is public, so GitHub Actions minutes are free and unlimited; this bar is for information.",
+      source: actionsUsed ? "measured" : "not-connected",
+      note: actionsUsed
+        ? "The repository is public, so these minutes are free and unlimited. The bar shows what a private repository would use."
+        : "Add GITHUB_TOKEN and GITHUB_REPO to connect (setup notes).",
     },
   ];
   return { meters, analyticsConnected, checkedAt: now.toISOString() };

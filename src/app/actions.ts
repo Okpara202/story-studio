@@ -31,6 +31,7 @@ import { IMAGE_TYPES, MAX_IMAGE_BYTES } from "@/shared/images";
 import { parseScript } from "@/shared/script/parse";
 import * as v from "@/server/validate";
 import { requireSession } from "@/server/session";
+import { startGeneration } from "@/server/generation";
 
 type Result<T> = T | { error: string };
 
@@ -206,6 +207,18 @@ export async function deleteStoryFromListAction(id: string): Promise<Result<{ de
     const deleted = await deleteStory(getStore(), v.str(id, "Story id", 40));
     refresh();
     return { deleted };
+  } catch (err) {
+    return errorOf(err);
+  }
+}
+
+/** Start the cloud run (voices, images, both video formats) for a story. */
+export async function generateVideoAction(id: string): Promise<Result<{ ok: true }>> {
+  await requireSession();
+  try {
+    await startGeneration(getStore(), v.str(id, "Story id", 40));
+    refresh();
+    return { ok: true };
   } catch (err) {
     return errorOf(err);
   }

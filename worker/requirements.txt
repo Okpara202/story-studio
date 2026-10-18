@@ -1,0 +1,2 @@
+# Backup text-to-speech for the cloud worker (used only if Microsoft voices fail).
+piper-tts==1.8.0

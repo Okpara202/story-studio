@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { parseScript } from "../shared/script/parse.ts";
 import { estimateStorySec } from "../shared/timing.ts";
-import { DEFAULT_STYLE, type JobFile, type StyleSettings } from "../shared/job.ts";
+import { DEFAULT_STYLE, type JobFile, type Snippet, type StyleSettings } from "../shared/job.ts";
 import { storyStatusOf, type JobStatus, type StoryStatus } from "../shared/status.ts";
 import type { ObjectStore } from "./storage/types.ts";
 
@@ -120,6 +120,7 @@ export async function createStory(store: ObjectStore, script = "", now = new Dat
 export interface StoryPatch {
   script?: string;
   voices?: Record<string, string>;
+  snippets?: Snippet[];
   /** Channel style snapshot taken when generation starts, so later style edits don't change this video. */
   style?: StyleSettings;
   /** Null clears it (a new run makes the story "ready" again). */
@@ -142,7 +143,9 @@ export async function updateStory(store: ObjectStore, id: string, patch: StoryPa
   if (!job) throw new NotFoundError(`Story ${id} not found`);
   // Drop undefined fields so a partial patch never wipes stored values.
   const defined = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
-  const next: JobFile = { ...job, ...defined, updatedAt: new Date().toISOString() };
+  // Picking snippets doesn't change the videos, so it isn't an edit (the review page compares edit times).
+  const onlySnippets = Object.keys(defined).every((k) => k === "snippets");
+  const next: JobFile = { ...job, ...defined, updatedAt: onlySnippets ? job.updatedAt : new Date().toISOString() };
   if (patch.script !== undefined) next.title = parseScript(patch.script).title;
   if (patch.downloadedAt === null) delete next.downloadedAt;
   await putJson(store, keys.job(id), next);

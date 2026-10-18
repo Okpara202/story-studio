@@ -34,7 +34,7 @@ export function GenerationPanel({ view, onRetry, retrying, onJumpToScene, review
           <div className="min-w-0">
             <h2 className="font-serif text-xl">Your videos are ready</h2>
             <p className="flex flex-wrap gap-x-5 font-mono text-xs text-muted">
-              {view.outputs.map((o) => (
+              {view.outputs.filter((o) => !o.snippet).map((o) => (
                 <span key={o.format}>
                   <span className="text-ink">{o.format === "9x16" ? "9:16" : "16:9"}</span> {formatDuration(o.durationSec)} ·{" "}
                   {formatAmount(o.bytes, "bytes")}

@@ -35,6 +35,16 @@ export interface SceneOverride {
   focusY?: number;
 }
 
+/** A short vertical teaser cut from the story at scene boundaries. */
+export interface Snippet {
+  /** Stable short id, e.g. "k3x9qa"; names the output file. */
+  id: string;
+  name: string;
+  /** 1-based inclusive scene range. */
+  from: number;
+  to: number;
+}
+
 /** jobs/{jobId}/job.json */
 export interface JobFile {
   version: 1;
@@ -51,6 +61,8 @@ export interface JobFile {
   style?: StyleSettings;
   /** Keyed by 1-based scene number. */
   sceneOverrides?: Record<string, SceneOverride>;
+  /** Teaser clips the owner picked; rendered as 9:16 videos. */
+  snippets?: Snippet[];
   /** Set by "mark as downloaded". */
   downloadedAt?: string;
 }
@@ -75,7 +87,9 @@ export function sceneImageBase(sceneNo: number): string {
   return `scene-${pad2(sceneNo)}`;
 }
 
+export const SNIPPETS_DIR = "output/snippets/";
+
 export function outputName(format: VideoFormat, range?: { from: number; to: number }): string {
   if (!range) return `output/full-${format}.mp4`;
-  return `output/snippets/scenes-${pad2(range.from)}-${pad2(range.to)}-${format}.mp4`;
+  return `${SNIPPETS_DIR}scenes-${pad2(range.from)}-${pad2(range.to)}-${format}.mp4`;
 }

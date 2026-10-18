@@ -76,6 +76,64 @@ export const PUBLISH_CHECKLIST: ChecklistItem[] = [
   { id: "thumbnail", label: "Picked a thumbnail", hint: "A strong frame from the video works." },
 ];
 
+export type Platform = "shorts" | "reels" | "tiktok";
+
+export interface PlatformPost {
+  platform: Platform;
+  label: string;
+  /** Suggested caption; worded differently per app so posts aren't identical copies. */
+  caption: string;
+  checklist: ChecklistItem[];
+}
+
+const AI_LABEL: ChecklistItem = {
+  id: "ai-label",
+  label: "Said Yes to the AI / synthetic content question",
+  hint: "Each app asks in its own words at upload. Realistic AI voices and images need the label.",
+};
+
+/**
+ * Captions and steps for the short-video apps, for one teaser (or the full
+ * vertical video when `teaser` is omitted). Plain suggestions: nothing is posted.
+ */
+export function platformPosts(parsed: ParsedStory, teaser?: { name: string }): PlatformPost[] {
+  const title = parsed.title || "Untitled story";
+  const hook = hookOf(parsed, 150);
+  const lead = teaser ? hook : `${title}. ${hook}`;
+  return [
+    {
+      platform: "shorts",
+      label: "YouTube Shorts",
+      caption: `${lead} Full story on the channel. #shorts #mystery #horrorstory`,
+      checklist: [
+        { id: "shorts-related", label: "Linked the full video", hint: "Set 'Related video' to the full 16:9 story at upload." },
+        AI_LABEL,
+        { id: "shorts-title", label: "Changed a few words of the caption", hint: "Don't post identical text everywhere." },
+      ],
+    },
+    {
+      platform: "reels",
+      label: "Facebook Reels",
+      caption: `${lead}\n\nThe full story is on YouTube (link in the comments). #mystery #scarystories`,
+      checklist: [
+        { id: "reels-comment", label: "Posted the full-video link as the first comment" },
+        AI_LABEL,
+        { id: "reels-original", label: "Uploaded the file from here", hint: "Never a download from another app; those carry watermarks." },
+      ],
+    },
+    {
+      platform: "tiktok",
+      label: "TikTok",
+      caption: `${lead} Full story: link in bio. #mystery #horrortok #storytime`,
+      checklist: [
+        { id: "tiktok-bio", label: "The full video is linked in the bio or a pinned comment" },
+        { ...AI_LABEL, hint: "Turn on 'AI-generated content' in the upload settings." },
+        { id: "tiktok-original", label: "Uploaded the file from here", hint: "Never a download from another app; those carry watermarks." },
+      ],
+    },
+  ];
+}
+
 export interface RenderChanges {
   /** Script or voices were edited after the videos were made. */
   script: boolean;

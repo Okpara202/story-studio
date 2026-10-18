@@ -13,6 +13,7 @@ import {
   type JobFile,
   type VideoFormat,
 } from "../../src/shared/job.ts";
+import type { SceneTime } from "../../src/shared/status.ts";
 import { FORMATS } from "./formats.ts";
 import { lerpExpr, planMotion } from "./motion.ts";
 import { buildAss } from "./ass.ts";
@@ -43,6 +44,8 @@ export interface RenderResult {
   durationSec: number;
   renderSec: number;
   warnings: string[];
+  /** Start and length of each rendered scene, from the real audio. */
+  sceneTimes: SceneTime[];
 }
 
 const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".webp"];
@@ -265,6 +268,7 @@ export async function renderVideo(opts: RenderOptions): Promise<RenderResult> {
       durationSec: total,
       renderSec: (Date.now() - started) / 1000,
       warnings,
+      sceneTimes: timeline.scenes.map((t, i) => ({ index: assets[i].scene.index, start: t.start, sec: t.duration })),
     };
   } catch (err) {
     await rm(abs(partRel), { force: true });

@@ -1,4 +1,5 @@
-import type { StyleSettings } from "../shared/job.ts";
+import type { Snippet, StyleSettings } from "../shared/job.ts";
+import { MAX_SNIPPETS, SNIPPET_NAME_MAX } from "../shared/snippets.ts";
 
 /**
  * Server Actions are public HTTP endpoints, so every input from the browser
@@ -30,6 +31,21 @@ export function voices(value: unknown): Record<string, string> {
   const entries = Object.entries(value);
   if (entries.length > 100) throw new ValidationError("Too many characters");
   return Object.fromEntries(entries.map(([k, v]) => [str(k, "Speaker", 60), str(v, "Voice", 100)]));
+}
+
+export function snippets(value: unknown): Snippet[] {
+  if (!Array.isArray(value)) throw new ValidationError("Snippets must be a list");
+  if (value.length > MAX_SNIPPETS) throw new ValidationError(`At most ${MAX_SNIPPETS} snippets`);
+  return value.map((s: Partial<Snippet>) => {
+    const id = str(s?.id, "Snippet id", 12);
+    if (!/^[a-z0-9]{4,12}$/.test(id)) throw new ValidationError("Invalid snippet id");
+    return {
+      id,
+      name: str(s.name, "Snippet name", SNIPPET_NAME_MAX).trim() || "Snippet",
+      from: sceneNo(s.from),
+      to: sceneNo(s.to),
+    };
+  });
 }
 
 function num(value: unknown, name: string, min: number, max: number): number {

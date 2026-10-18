@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { GenerationView } from "@/server/generation";
+import type { GenerationMode, GenerationView } from "@/server/generation";
 import { generateVideoAction } from "../../actions";
 
 const POLL_MS = 3000;
@@ -53,7 +53,7 @@ export function useGeneration(jobId: string, initial: GenerationView | null = nu
   }, [active, load]);
 
   const start = useCallback(
-    async (beforeStart: () => Promise<void>) => {
+    async (beforeStart: () => Promise<void>, mode: GenerationMode = "full") => {
       setError(null);
       setStarting(true);
       epoch.current++;
@@ -69,7 +69,7 @@ export function useGeneration(jobId: string, initial: GenerationView | null = nu
       startingRef.current = true;
       try {
         await beforeStart();
-        const res = await generateVideoAction(jobId);
+        const res = await generateVideoAction(jobId, mode);
         if ("error" in res) setError(res.error);
       } catch {
         setError("Could not reach the server. Check your connection and try again.");

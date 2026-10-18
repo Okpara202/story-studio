@@ -12,22 +12,31 @@ export const STUCK_AFTER_MS = 5 * 60_000;
  * Start a cloud run: snapshot the channel style into the story, mark it queued,
  * then ask GitHub to run the worker. The worker takes over status.json from there.
  */
+export type GenerationMode = "full" | "snippets";
+
 export async function startGeneration(
   store: ObjectStore,
   id: string,
-  opts: { github?: GitHubConfig; formats?: string } = {},
+  opts: { github?: GitHubConfig; formats?: string; mode?: GenerationMode } = {},
 ): Promise<JobStatus> {
+  const mode = opts.mode ?? "full";
   const story = await getStory(store, id);
   if (!story) throw new Error("Story not found");
   const parsed = parseScript(story.job.script);
   const errors = parsed.issues.filter((i) => i.severity === "error");
   if (errors.length) throw new Error(`Fix the script first: ${errors[0].message}`);
+  if (mode === "snippets" && !story.job.snippets?.length) throw new Error("Add a snippet first.");
 
   const current = story.status;
   if (current && (current.state === "queued" || current.state === "running")) {
     const age = Date.now() - Date.parse(current.updatedAt);
     if (age < STUCK_AFTER_MS) throw new Error("This story is already being generated.");
   }
+  // A snippets-only run keeps the finished full videos; the worker reads them from here.
+  const carried: Pick<JobStatus, "outputs" | "sceneTimes"> =
+    mode === "snippets" && current
+      ? { outputs: current.outputs?.filter((o) => !o.snippet), sceneTimes: current.sceneTimes }
+      : {};
 
   const github = opts.github ?? githubConfig();
   // A new run brings the files back, so the story is no longer "downloaded".
@@ -38,12 +47,18 @@ export async function startGeneration(
     stage: null,
     progress: 0,
     message: "Waiting for a cloud worker to start",
+    ...carried,
     startedAt: now,
     updatedAt: now,
   };
   await putStatus(store, id, queued);
   try {
-    await dispatchWorkflow(github, RENDER_WORKFLOW, { job_id: id, formats: opts.formats ?? "16x9,9x16" });
+    // "mode" is only sent when needed, so full runs also work with a workflow file that predates it.
+    await dispatchWorkflow(github, RENDER_WORKFLOW, {
+      job_id: id,
+      formats: opts.formats ?? "16x9,9x16",
+      ...(mode === "full" ? {} : { mode }),
+    });
   } catch (err) {
     const failed: JobStatus = {
       ...queued,
@@ -89,7 +104,7 @@ export async function generationView(store: ObjectStore, id: string, now = Date.
             ...o,
             url: await store.presignGet(`${keys.jobDir(id)}${o.file}`),
             downloadUrl: await store.presignGet(`${keys.jobDir(id)}${o.file}`, {
-              downloadName: `${fileTitle(story?.job.title ?? "")}-${o.format}.mp4`,
+              downloadName: `${fileTitle(story?.job.title ?? "")}${o.snippet ? `-${fileTitle(o.snippet.name)}` : ""}-${o.format}.mp4`,
             }),
           })),
         )

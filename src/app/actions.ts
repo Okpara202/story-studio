@@ -34,7 +34,7 @@ import { IMAGE_TYPES, MAX_IMAGE_BYTES } from "@/shared/images";
 import { parseScript } from "@/shared/script/parse";
 import * as v from "@/server/validate";
 import { requireSession } from "@/server/session";
-import { startGeneration } from "@/server/generation";
+import { startGeneration, type GenerationMode } from "@/server/generation";
 
 type Result<T> = T | { error: string };
 
@@ -237,11 +237,23 @@ export async function deleteStoryFromListAction(id: string): Promise<Result<{ de
   }
 }
 
-/** Start the cloud run (voices, images, both video formats) for a story. */
-export async function generateVideoAction(id: string): Promise<Result<{ ok: true }>> {
+/** Save the story's teaser snippets (whole list). */
+export async function saveSnippetsAction(id: string, snippets: unknown): Promise<Result<{ ok: true }>> {
   await requireSession();
   try {
-    await startGeneration(getStore(), v.str(id, "Story id", 40));
+    await updateStory(getStore(), v.str(id, "Story id", 40), { snippets: v.snippets(snippets) });
+    return { ok: true };
+  } catch (err) {
+    return errorOf(err);
+  }
+}
+
+/** Start the cloud run for a story: everything, or only the teaser snippets. */
+export async function generateVideoAction(id: string, mode: GenerationMode = "full"): Promise<Result<{ ok: true }>> {
+  await requireSession();
+  try {
+    if (mode !== "full" && mode !== "snippets") throw new v.ValidationError("Invalid mode");
+    await startGeneration(getStore(), v.str(id, "Story id", 40), { mode });
     refresh();
     return { ok: true };
   } catch (err) {

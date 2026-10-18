@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useTicks } from "@/lib/use-ticks";
 import { useRouter } from "next/navigation";
 import { parseScript } from "@/shared/script/parse";
 import type { Scene } from "@/shared/script/types";
@@ -45,6 +46,7 @@ export function ReviewScreen({ job, status, initialView, images: initialImages, 
   const done = s?.state === "done";
   const downloaded = status === "downloaded" && !s;
   const editorHref = `/stories/${job.jobId}`;
+  const fullOutputs = view.outputs.filter((o) => !o.snippet);
 
   const changes = changesSinceRender(
     s,
@@ -112,8 +114,8 @@ export function ReviewScreen({ job, status, initialView, images: initialImages, 
             </Card>
           )}
           <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-            <Player outputs={view.outputs} warnings={s.warnings ?? []} />
-            <PublishPanel jobId={job.jobId} suggested={suggested} outputs={view.outputs} />
+            <Player outputs={fullOutputs} warnings={s.warnings ?? []} snippetsHref={`${editorHref}/snippets`} />
+            <PublishPanel jobId={job.jobId} suggested={suggested} outputs={fullOutputs} />
           </div>
         </>
       )}
@@ -162,7 +164,7 @@ export function ReviewScreen({ job, status, initialView, images: initialImages, 
   );
 }
 
-function Player({ outputs, warnings }: { outputs: OutputView[]; warnings: string[] }) {
+function Player({ outputs, warnings, snippetsHref }: { outputs: OutputView[]; warnings: string[]; snippetsHref: string }) {
   const [format, setFormat] = useState<VideoFormat>(outputs[0]?.format ?? "16x9");
   const current = outputs.find((o) => o.format === format) ?? outputs[0];
   if (!current) return null;
@@ -211,6 +213,9 @@ function Player({ outputs, warnings }: { outputs: OutputView[]; warnings: string
           </li>
         ))}
       </ul>
+      <ButtonLink href={snippetsHref} className="mt-3 h-9 w-full">
+        Teasers for Shorts, Reels &amp; TikTok →
+      </ButtonLink>
       {warnings.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs text-muted">
           {warnings.map((w, i) => (
@@ -222,47 +227,11 @@ function Player({ outputs, warnings }: { outputs: OutputView[]; warnings: string
   );
 }
 
-/** Ticked checklist items, remembered per story in this browser only. */
-function useTicks(jobId: string) {
-  const key = `publish-checklist:${jobId}`;
-  const raw = useSyncExternalStore(
-    (onChange) => {
-      window.addEventListener("storage", onChange);
-      window.addEventListener("checklist-change", onChange);
-      return () => {
-        window.removeEventListener("storage", onChange);
-        window.removeEventListener("checklist-change", onChange);
-      };
-    },
-    () => {
-      try {
-        return localStorage.getItem(key) ?? "";
-      } catch {
-        return "";
-      }
-    },
-    () => "",
-  );
-  const ticks = useMemo(() => new Set(raw ? raw.split(",") : []), [raw]);
-  const set = (id: string, on: boolean) => {
-    const next = new Set(ticks);
-    if (on) next.add(id);
-    else next.delete(id);
-    try {
-      localStorage.setItem(key, [...next].join(","));
-    } catch {
-      // Private window: ticks just aren't remembered.
-    }
-    window.dispatchEvent(new Event("checklist-change"));
-  };
-  return { ticks, set };
-}
-
 function PublishPanel({ jobId, suggested, outputs }: { jobId: string; suggested: PublishText; outputs: OutputView[] }) {
   const [title, setTitle] = useState(suggested.title);
   const [description, setDescription] = useState(suggested.description);
   const [tags, setTags] = useState(suggested.tags.join(", "));
-  const { ticks, set } = useTicks(jobId);
+  const { ticks, set } = useTicks(`publish-checklist:${jobId}`);
   const allTicked = PUBLISH_CHECKLIST.every((item) => ticks.has(item.id));
   const landscape = outputs.find((o) => o.format === "16x9");
 

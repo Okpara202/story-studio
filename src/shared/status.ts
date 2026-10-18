@@ -1,4 +1,4 @@
-import type { JobFile, VideoFormat } from "./job.ts";
+import type { JobFile, Snippet, VideoFormat } from "./job.ts";
 
 export type JobState = "queued" | "running" | "done" | "failed";
 export type JobStage = "voices" | "images" | "render";
@@ -10,6 +10,15 @@ export interface OutputInfo {
   bytes: number;
   durationSec: number;
   renderSec?: number;
+  /** Set on teaser clips: which snippet (as it was when rendered) this file is. */
+  snippet?: Snippet;
+}
+
+/** Where each scene sits in the full video, measured from the real voice clips. */
+export interface SceneTime {
+  index: number;
+  start: number;
+  sec: number;
 }
 
 export interface SceneStatus {
@@ -32,6 +41,8 @@ export interface JobStatus {
   /** Per-scene results for stages that can fail scene by scene (images). */
   scenes?: SceneStatus[];
   outputs?: OutputInfo[];
+  /** Scene timings of the last full render; give exact snippet lengths and previews. */
+  sceneTimes?: SceneTime[];
   startedAt: string;
   updatedAt: string;
   finishedAt?: string;

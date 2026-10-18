@@ -14,7 +14,9 @@ import { createStore } from "../src/server/storage/index.ts";
 import { assertJobId, getStyle, keys } from "../src/server/jobs.ts";
 import { ensureSceneImages } from "../src/server/scene-images.ts";
 import { imageProviders } from "../src/server/images/index.ts";
-import { VIDEO_FORMATS, outputName, type JobFile, type VideoFormat } from "../src/shared/job.ts";
+import { SNIPPETS_DIR, VIDEO_FORMATS, outputName, type JobFile, type Snippet, type VideoFormat } from "../src/shared/job.ts";
+import { parseScript } from "../src/shared/script/parse.ts";
+import { sameSnippet, snippetError } from "../src/shared/snippets.ts";
 import type { JobStage, JobStatus, OutputInfo, SceneStatus } from "../src/shared/status.ts";
 import type { ObjectStore } from "../src/server/storage/types.ts";
 import { voiceJob } from "./lib/voices.ts";
@@ -62,17 +64,30 @@ function cloudStatus(store: ObjectStore, jobId: string) {
 async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { formats: { type: "string", default: "16x9,9x16" } },
+    options: {
+      formats: { type: "string", default: "16x9,9x16" },
+      // "full": both full videos plus any snippets; "snippets": only the teaser snippets.
+      mode: { type: "string", default: "full" },
+    },
   });
   const jobId = positionals[0] ?? "";
   assertJobId(jobId);
   const formats = values.formats.split(",").map((f) => f.trim()) as VideoFormat[];
   if (!formats.length || formats.some((f) => !VIDEO_FORMATS.includes(f))) throw new Error(`Invalid --formats ${values.formats}`);
+  const mode = values.mode;
+  if (mode !== "full" && mode !== "snippets") throw new Error(`Invalid --mode ${mode}. Use full or snippets.`);
 
   const store = createStore();
   if (store.kind !== "r2") throw new Error("The cloud worker needs the R2_* variables.");
   const prefix = keys.jobDir(jobId);
+  // Read before this run overwrites it: a snippets-only run keeps the earlier full videos.
+  const previousText = await store.getText(keys.status(jobId));
+  const previous = previousText ? (JSON.parse(previousText) as JobStatus) : null;
   const status = cloudStatus(store, jobId);
+  // Kept through a failed snippets-only run, so the next try still has the full videos.
+  if (mode === "snippets") {
+    status.set({ outputs: (previous?.outputs ?? []).filter((o) => !o.snippet), sceneTimes: previous?.sceneTimes });
+  }
   const work = await mkdtemp(path.join(tmpdir(), `story-${jobId}-`));
   const warnings: string[] = [];
   const t0 = Date.now();
@@ -124,22 +139,54 @@ async function main() {
     await downloadPrefix(store, `${prefix}images/`, path.join(work, "images"));
     lap(`images: ${results.filter((r) => r.result === "generated").length} new, ${results.length} total`);
 
-    // 4. Render each format and upload it
-    await status.stage("render", `Rendering ${formats.join(" and ")}`);
-    const outputs: OutputInfo[] = [];
-    for (const [i, format] of formats.entries()) {
+    // 4. Render the full videos (unless only snippets were asked for), then the teaser snippets
+    const sceneCount = parseScript(job.script).scenes.length;
+    const snippets = (job.snippets ?? []).filter((s) => {
+      const error = snippetError(s, sceneCount);
+      if (error) warnings.push(`Snippet "${s.name}" skipped: ${error}`);
+      return !error;
+    });
+    const fullFormats = mode === "snippets" ? [] : formats;
+    if (mode === "snippets" && !snippets.length) throw new Error("No snippets to render. Add one on the Snippets page.");
+    const jobs: { format: VideoFormat; snippet?: Snippet }[] = [
+      ...fullFormats.map((format) => ({ format })),
+      ...snippets.map((snippet) => ({ format: "9x16" as const, snippet })),
+    ];
+    await status.stage("render", mode === "snippets" ? "Rendering snippets" : `Rendering ${formats.join(" and ")}`);
+
+    // A snippets-only run keeps the earlier full videos and any teaser whose scenes didn't change
+    // (voices and images are the same, so its file would be identical). A full run redoes everything.
+    const outputs: OutputInfo[] = mode === "snippets" ? (previous?.outputs ?? []).filter((o) => !o.snippet) : [];
+    let sceneTimes = mode === "snippets" ? previous?.sceneTimes : undefined;
+    const assetsChanged = voices.synthesized > 0 || results.some((r) => r.result === "generated");
+    const reusable = mode === "snippets" && !assetsChanged ? (previous?.outputs ?? []).filter((o) => o.snippet) : [];
+    const todo = jobs.filter(({ snippet }) => {
+      const kept = snippet && reusable.find((o) => sameSnippet(o.snippet, snippet));
+      if (kept) outputs.push({ ...kept, snippet });
+      return !kept;
+    });
+    const wanted = new Set([...outputs, ...todo.map((j) => ({ file: outputName(j.format, j.snippet) }))].map((o) => `${prefix}${o.file}`));
+    const { keys: oldSnippetFiles } = await store.list(`${prefix}${SNIPPETS_DIR}`);
+    await Promise.all(oldSnippetFiles.filter((k) => !wanted.has(k)).map((k) => store.delete(k)));
+    if (todo.length < jobs.length) lap(`snippets unchanged since last render: ${jobs.length - todo.length}`);
+    for (const [i, { format, snippet }] of todo.entries()) {
+      const label = snippet ? `snippet "${snippet.name}"` : format;
       const result = await renderVideo({
         jobDir: work,
         format,
-        onProgress: (f) => status.progress((i + f) / formats.length, `Rendering ${format}`),
+        scenes: snippet ? { from: snippet.from, to: snippet.to } : undefined,
+        onProgress: (f) => status.progress((i + f) / todo.length, `Rendering ${label}`),
       });
       warnings.push(...result.warnings);
-      const file = outputName(format);
+      const file = outputName(format, snippet);
       await store.putFile(`${prefix}${file}`, result.outputPath, "video/mp4");
-      outputs.push({ file, format, bytes: result.bytes, durationSec: result.durationSec, renderSec: result.renderSec });
-      lap(`rendered ${format}: ${(result.bytes / 1e6).toFixed(1)} MB in ${result.renderSec.toFixed(1)} s`);
+      await rm(result.outputPath, { force: true });
+      outputs.push({ file, format, bytes: result.bytes, durationSec: result.durationSec, renderSec: result.renderSec, snippet });
+      if (!snippet && !sceneTimes) sceneTimes = result.sceneTimes;
+      lap(`rendered ${label}: ${(result.bytes / 1e6).toFixed(1)} MB in ${result.renderSec.toFixed(1)} s`);
     }
 
+    status.set({ sceneTimes });
     await status.done(outputs, warnings);
     lap("done");
   } catch (err) {

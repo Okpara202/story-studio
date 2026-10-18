@@ -12,13 +12,15 @@ export function assTime(sec: number): string {
   return `${h}:${p(m)}:${p(s)}.${p(c)}`;
 }
 
-/** Neutralise characters that ASS treats as markup. */
+/** Neutralise characters that ASS treats as markup, then turn *word* into italics. */
 export function assText(text: string): string {
   return text
     .replace(/\\/g, "/")
     .replace(/\{/g, "(")
     .replace(/\}/g, ")")
-    .replace(/\n/g, "\\N");
+    .replace(/\n/g, "\\N")
+    // *word* (already marked word by word, see emphasisPerWord) becomes italics.
+    .replace(/\*([^*\s][^*]*?)\*/g, "{\\i1}$1{\\i0}");
 }
 
 export function buildAss(events: CaptionEvent[], spec: FormatSpec, font: string): string {

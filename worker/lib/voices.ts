@@ -5,6 +5,8 @@ import path from "node:path";
 import { parseScript } from "../../src/shared/script/parse.ts";
 import { lineAudioBase, type JobFile } from "../../src/shared/job.ts";
 import { DEFAULT_NARRATOR_VOICE, suggestVoices } from "../../src/shared/voices.ts";
+import { prosodyFor, type Prosody } from "../../src/shared/delivery.ts";
+import type { LinePart } from "../../src/shared/script/types.ts";
 import type { TtsProvider } from "../tts/types.ts";
 import { errorMessage } from "../tts/types.ts";
 import { probeDuration, runFfmpeg } from "./ffmpeg.ts";
@@ -18,6 +20,10 @@ export interface PlannedLine {
   speakerId: string;
   voiceId: string;
   text: string;
+  /** Words and inline pauses (seconds), in order. */
+  parts: LinePart[];
+  /** Delivery cues, e.g. ["whispering"]. */
+  cues: string[];
 }
 
 export interface ClipEntry {
@@ -44,23 +50,46 @@ export function planLines(job: JobFile): PlannedLine[] {
       speakerId: line.speakerId,
       voiceId: cast[line.speakerId],
       text: line.text,
+      parts: line.parts,
+      cues: line.cues,
     })),
   );
 }
 
-export function clipHash(provider: string, voiceId: string, text: string): string {
-  return createHash("sha256").update(`${CLIP_VERSION}\n${provider}\n${voiceId}\n${text}`).digest("hex").slice(0, 16);
+/**
+ * Identifies a clip by what was said and how. Plain lines hash exactly as
+ * before delivery cues existed, so their cached clips stay valid.
+ */
+export function clipHash(
+  provider: string,
+  voiceId: string,
+  text: string,
+  how?: { parts: LinePart[]; cues: string[] },
+): string {
+  const plain = !how || (how.cues.length === 0 && how.parts.every((p) => typeof p === "string"));
+  const extra = plain ? "" : `\n${JSON.stringify(how.parts)}\n${how.cues.join(",")}`;
+  return createHash("sha256")
+    .update(`${CLIP_VERSION}\n${provider}\n${voiceId}\n${text}${extra}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 /**
  * Trim leading/trailing silence (TTS engines pad each clip, which would
  * stretch the pauses between lines) and store as compact mono MP3.
  */
-export async function finishClip(rawFile: string, outFile: string): Promise<void> {
+export async function finishClip(rawFile: string, outFile: string, prosody?: Prosody | null): Promise<void> {
   const trim = "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.05";
+  const filters = [trim, "areverse", trim.replace("0.05", "0.08"), "areverse"];
+  // For engines without built-in prosody: apply speed and volume to the clip (pitch is left as is).
+  if (prosody) {
+    const tempo = Math.min(2, Math.max(0.5, 1 + prosody.rate / 100));
+    if (tempo !== 1) filters.push(`atempo=${tempo.toFixed(3)}`);
+    if (prosody.volume !== 0) filters.push(`volume=${Math.max(0.05, 1 + prosody.volume / 100).toFixed(3)}`);
+  }
   await runFfmpeg([
     "-i", rawFile,
-    "-af", `${trim},areverse,${trim.replace("0.05", "0.08")},areverse`,
+    "-af", filters.join(","),
     "-c:a", "libmp3lame", "-b:a", "64k", "-ac", "1", "-ar", "24000",
     "-y", outFile,
   ]);
@@ -144,7 +173,7 @@ async function voiceWith(
     const clips: Record<string, ClipEntry> = {};
     let synthesized = 0;
     for (const [i, line] of lines.entries()) {
-      const hash = clipHash(provider.name, line.voiceId, line.text);
+      const hash = clipHash(provider.name, line.voiceId, line.text, line);
       const out = path.join(staging, `${line.key}.mp3`);
       const cached = byHash.get(hash);
       if (cached) {
@@ -152,9 +181,7 @@ async function voiceWith(
         clips[line.key] = { ...cached.entry, hash };
       } else {
         opts.onProgress?.(i, lines.length, `Voicing line ${i + 1} of ${lines.length}`);
-        const raw = await provider.synthesize(line.text, line.voiceId, path.join(staging, `${line.key}.raw`));
-        await finishClip(raw, out);
-        await rm(raw, { force: true });
+        await speakLine(provider, line, path.join(staging, line.key), out);
         clips[line.key] = { hash, voiceId: line.voiceId, durationSec: await probeDuration(out) };
         synthesized++;
       }
@@ -174,4 +201,42 @@ async function voiceWith(
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
+}
+
+/**
+ * Voice one line into `out`: each spoken part separately (with the line's
+ * delivery cues), joined by exact silences for inline [pause]s.
+ */
+async function speakLine(provider: TtsProvider, line: PlannedLine, base: string, out: string): Promise<void> {
+  const prosody = prosodyFor(line.cues);
+  const speak = async (text: string, file: string) => {
+    const raw = await provider.synthesize(text, line.voiceId, `${file}.raw`, { prosody });
+    await finishClip(raw, `${file}.mp3`, provider.nativeProsody ? null : prosody);
+    await rm(raw, { force: true });
+    return `${file}.mp3`;
+  };
+  if (line.parts.length <= 1) {
+    await rename(await speak(line.text, `${base}.part0`), out);
+    return;
+  }
+  const inputs: string[] = [];
+  const pieces: string[] = [];
+  for (const [i, part] of line.parts.entries()) {
+    if (typeof part === "string") {
+      const file = await speak(part, `${base}.part${i}`);
+      pieces.push(file);
+      inputs.push("-i", file);
+    } else {
+      inputs.push("-f", "lavfi", "-t", String(part), "-i", "anullsrc=r=24000:cl=mono");
+    }
+  }
+  const labels = line.parts.map((_, i) => `[${i}:a]`).join("");
+  await runFfmpeg([
+    ...inputs,
+    "-filter_complex", `${labels}concat=n=${line.parts.length}:v=0:a=1[a]`,
+    "-map", "[a]",
+    "-c:a", "libmp3lame", "-b:a", "64k", "-ac", "1", "-ar", "24000",
+    "-y", out,
+  ]);
+  await Promise.all(pieces.map((p) => rm(p, { force: true })));
 }

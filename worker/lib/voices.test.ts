@@ -24,6 +24,7 @@ const job = (script: string, voices: Record<string, string> = {}): JobFile => ({
 class FakeProvider implements TtsProvider {
   calls: string[] = [];
   readonly name: string;
+  readonly nativeProsody = false;
   private readonly failAt: number;
   constructor(name: string, failAt = Infinity) {
     this.name = name;
@@ -132,3 +133,20 @@ test("when every provider fails, existing audio is left untouched", () =>
     assert.equal(await readFile(path.join(dir, "audio", "manifest.json"), "utf8"), before);
     assert.equal((await readdir(path.join(dir, "audio"))).length, 4);
   }));
+
+test("delivery cues and inline pauses shape the clip", () =>
+  withJob("# T\n[scene: a]\nNARRATOR: Plain.\nNARRATOR (slow): Slow.\nNARRATOR: One [pause 2s] two.", async (dir) => {
+    const p = new FakeProvider("fake");
+    await voiceJob({ jobDir: dir, providers: [p] });
+    const m = JSON.parse(await readFile(path.join(dir, "audio", "manifest.json"), "utf8")) as AudioManifest;
+    const [plain, slow, paused] = ["s01-l01", "s01-l02", "s01-l03"].map((k) => m.clips[k].durationSec);
+    // Fake clips are 1 s of tone; "(slow)" is 25% slower, and the inline pause adds 2 s between two parts.
+    assert.ok(slow > plain * 1.25, `slow ${slow} vs plain ${plain}`);
+    assert.ok(paused > plain * 2 + 1.9 && paused < plain * 2 + 2.3, `paused ${paused}`);
+    assert.deepEqual(p.calls, ["Plain.", "Slow.", "One", "two."]);
+  }));
+
+test("plain lines keep the same clip hash as before cues existed", () => {
+  assert.equal(clipHash("edge", "v", "Hi."), clipHash("edge", "v", "Hi.", { parts: ["Hi."], cues: [] }));
+  assert.notEqual(clipHash("edge", "v", "Hi."), clipHash("edge", "v", "Hi.", { parts: ["Hi."], cues: ["sad"] }));
+});

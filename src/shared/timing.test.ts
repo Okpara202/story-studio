@@ -50,3 +50,14 @@ test("splitCaption makes 2-line chunks with proportional, contiguous times", () 
   assert.equal(events[1].end, 20);
   assert.ok(events[0].end - events[0].start > events[1].end - events[1].start);
 });
+
+test("[pause] lines add silence before lines and after the scene", () => {
+  const plain = computeTimeline([[1, 1]], OPTS);
+  const paused = computeTimeline([[1, 1]], OPTS, [{ before: [0, 2], after: 1.5 }]);
+  assert.equal(paused.scenes[0].lines[1].start, plain.scenes[0].lines[1].start + 2);
+  assert.equal(paused.totalSec, plain.totalSec + 3.5);
+});
+
+test("estimates include inline and line pauses", () => {
+  assert.equal(estimateLineSec("one two three four five six seven", ["a", 1.5, "b"]), 3.5);
+});

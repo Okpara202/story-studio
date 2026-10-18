@@ -46,3 +46,15 @@ test("scene range parsing", () => {
   assert.throws(() => parseSceneRange("1-9", 6));
   assert.throws(() => parseSceneRange("x", 6));
 });
+
+test("emphasis becomes ASS italics, word by word, surviving caption splits", async () => {
+  const { emphasisPerWord, splitCaption } = await import("../../src/shared/captions.ts");
+  assert.equal(emphasisPerWord("It was *all mine*, every word."), "It was *all* *mine,* every word.");
+  const events = splitCaption(emphasisPerWord("aaa *bbb ccc ddd* eee"), 0, 4, 8, 1);
+  assert.deepEqual(events.map((e) => assText(e.text)), [
+    "aaa {\\i1}bbb{\\i0}",
+    "{\\i1}ccc{\\i0} {\\i1}ddd{\\i0}",
+    "eee",
+  ]);
+  assert.equal(assText("2 * 3 = 6"), "2 * 3 = 6");
+});

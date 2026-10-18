@@ -14,6 +14,8 @@ import type { Availability, TtsProvider } from "./types.ts";
  */
 export class PiperProvider implements TtsProvider {
   readonly name = "piper";
+  /** Piper has no pitch/volume control; speed and volume are applied to the clip afterwards. */
+  readonly nativeProsody = false;
   private readonly python: string;
   private readonly dataDir: string;
   /** Edge voice id -> Piper voice, distinct per character where possible. */

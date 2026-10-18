@@ -93,9 +93,65 @@ test("script without lines is an error", () => {
 });
 
 test("unknown tags warn and are ignored", () => {
-  const story = parseScript("# T\n[music: rain]\n[scene: a]\nHi.");
+  const story = parseScript("# T\n[lighting: dim]\n[scene: a]\nHi.");
   assert.equal(story.scenes.length, 1);
   assert.ok(story.issues.some((i) => i.line === 2 && i.message.includes("Unknown tag")));
+});
+
+test("music and sfx tags are recognised with a 'not yet' note", () => {
+  const story = parseScript("# T\n[scene: a]\n[music: rain]\nHi.\n[sfx: door-creak]");
+  assert.equal(story.ok, true);
+  assert.ok(story.issues.some((i) => i.line === 3 && i.message.startsWith("Music cues")));
+  assert.ok(story.issues.some((i) => i.line === 5 && i.message.startsWith("Sound effects")));
+});
+
+test("comments are ignored and do not break a wrapped line", () => {
+  const story = parseScript("# T\n// planning note\n[scene: a]\nNARRATOR: The letter\n// TODO tighten\narrived late.");
+  assert.deepEqual(story.scenes[0].lines.map((l) => l.text), ["The letter arrived late."]);
+  assert.deepEqual(story.issues, []);
+});
+
+test("delivery cues after the name, with aliases and several cues", () => {
+  const story = parseScript("# T\n[scene: a]\nCLERK (whisper): Leave now.\nCLERK (Terrified, slow): Please.\nCLERK: Normal.");
+  const [a, b, c] = story.scenes[0].lines;
+  assert.deepEqual([a.speakerId, a.cues, a.text], ["CLERK", ["whispering"], "Leave now."]);
+  assert.deepEqual(b.cues, ["scared", "slow"]);
+  assert.deepEqual(c.cues, []);
+  assert.equal(story.characters.length, 1);
+});
+
+test("unknown cues warn and are dropped", () => {
+  const story = parseScript("# T\n[scene: a]\nCLERK (giggling): Hi.");
+  assert.deepEqual(story.scenes[0].lines[0].cues, []);
+  assert.ok(story.issues.some((i) => i.line === 3 && i.message.includes('"(giggling)"')));
+});
+
+test("[pause] lines add silence before the next line, or after the scene", () => {
+  const story = parseScript("# T\n[scene: a]\nOne.\n[pause 2s]\n[pause]\nTwo.\n[pause 500ms]\n[scene: b]\n[pause 1.5s]\nThree.\n[pause 30s]");
+  const [a, b] = story.scenes;
+  assert.deepEqual(a.lines.map((l) => l.pauseBefore), [0, 3]);
+  assert.equal(a.pauseAfter, 0.5);
+  assert.equal(b.lines[0].pauseBefore, 1.5);
+  assert.equal(b.pauseAfter, 10, "capped at 10 s");
+  assert.ok(story.issues.some((i) => i.line === 11 && i.message.includes("longer than")));
+});
+
+test("inline pauses split what the voice says but not the captions", () => {
+  const story = parseScript("# T\n[scene: a]\nNARRATOR: I waited [pause 2s] and waited. [pause]");
+  const line = story.scenes[0].lines[0];
+  assert.deepEqual(line.parts, ["I waited", 2, "and waited."]);
+  assert.equal(line.text, "I waited and waited.");
+  assert.equal(line.caption, "I waited and waited.");
+});
+
+test("*emphasis* is kept for captions and removed for the voice", () => {
+  const story = parseScript("# T\n[scene: a]\nNARRATOR: The handwriting was *mine*. *Every word.*");
+  const line = story.scenes[0].lines[0];
+  assert.equal(line.text, "The handwriting was mine. Every word.");
+  assert.equal(line.caption, "The handwriting was *mine*. *Every word.*");
+  const bad = parseScript("# T\n[scene: a]\nIt was *mine.");
+  assert.equal(bad.scenes[0].lines[0].caption, "It was mine.");
+  assert.ok(bad.issues.some((i) => i.message.includes("not closed")));
 });
 
 test("multi-word one-off speaker gets a 'was that narration?' warning", () => {
@@ -108,4 +164,14 @@ test("handles CRLF line endings and second title", () => {
   assert.equal(story.title, "T");
   assert.equal(story.scenes[0].lines[0].text, "Hi.");
   assert.ok(story.issues.some((i) => i.line === 4));
+});
+
+test("the guide's example script and AI prompt example parse cleanly", async () => {
+  const { EXAMPLE_SCRIPT_V2, aiPrompt } = await import("./guide.ts");
+  const story = parseScript(EXAMPLE_SCRIPT_V2);
+  assert.equal(story.ok, true);
+  assert.deepEqual(story.issues, []);
+  assert.equal(story.scenes.length, 3);
+  assert.deepEqual(story.scenes[2].lines[0].cues, ["whispering", "scared"]);
+  assert.ok(aiPrompt().includes(EXAMPLE_SCRIPT_V2));
 });

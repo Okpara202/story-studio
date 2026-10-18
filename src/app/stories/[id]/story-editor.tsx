@@ -191,7 +191,7 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
         </div>
       )}
 
-      <div className="mt-5 grid gap-6 lg:h-[calc(100dvh-14.5rem)] lg:min-h-[28rem] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <div className="mt-5 grid gap-6 lg:h-[calc(100dvh-14.5rem)] lg:min-h-112 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         {/* Script pane */}
         <section aria-label="Script" className={`${tab === "script" ? "flex" : "hidden"} relative min-w-0 flex-col lg:flex lg:min-h-0`}>
           <label htmlFor="script" className="sr-only">
@@ -216,11 +216,14 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
                 </div>
               ))}
             </dl>
+            <Link href="/guide" className="mt-3 inline-block text-accent hover:underline">
+              Full guide and AI prompt →
+            </Link>
           </details>
         </section>
 
         {/* Preview pane */}
-        <section aria-label="Preview" className={`${tab === "preview" ? "block" : "hidden"} relative min-w-0 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-2 [scrollbar-gutter:stable] [scrollbar-width:thin]`}>
+        <section aria-label="Preview" className={`${tab === "preview" ? "block" : "hidden"} relative min-w-0 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-2 scrollbar-gutter-stable scrollbar-thin`}>
           <ScriptPreview
             parsed={parsed}
             isEmpty={isEmpty}

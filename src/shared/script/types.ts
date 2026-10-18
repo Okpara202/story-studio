@@ -7,10 +7,22 @@ export interface ParseIssue {
   message: string;
 }
 
+/** A piece of a spoken line: words to say, or seconds of silence (from an inline `[pause]`). */
+export type LinePart = string | number;
+
 export interface DialogueLine {
   /** Canonical speaker id, upper-case with single spaces, e.g. "NARRATOR". */
   speakerId: string;
+  /** Plain spoken text: no markup, no inline pauses. */
   text: string;
+  /** Text for captions: `*emphasis*` markers kept, inline pauses removed. */
+  caption: string;
+  /** What the voice says, in order; numbers are pauses in seconds. Usually just [text]. */
+  parts: LinePart[];
+  /** Delivery cues from `NAME (whispering, slow):`, canonical names. */
+  cues: string[];
+  /** Seconds of `[pause]` lines just before this line. */
+  pauseBefore: number;
   /** 1-based source line where this line starts. */
   sourceLine: number;
 }
@@ -23,6 +35,8 @@ export interface Scene {
   /** 1-based source line of the `[scene]` marker (or first line if implicit). */
   sourceLine: number;
   lines: DialogueLine[];
+  /** Seconds of `[pause]` lines after the last line of the scene. */
+  pauseAfter: number;
 }
 
 export interface Character {

@@ -112,7 +112,8 @@ export function ScriptPreview({
         </div>
         <ol className="mt-3 space-y-3">
           {parsed.scenes.map((scene) => {
-            const sec = scene.lines.reduce((n, l) => n + estimateLineSec(l.text), 0);
+            const sec =
+              scene.lines.reduce((n, l) => n + estimateLineSec(l.text, l.parts) + l.pauseBefore, 0) + scene.pauseAfter;
             return (
               <li key={scene.index}>
                 <Card className="overflow-hidden">
@@ -140,20 +141,35 @@ export function ScriptPreview({
                     ) : (
                       <ul className="space-y-2">
                         {scene.lines.map((line, i) => (
-                          <li
-                            key={i}
-                            className="border-l-2 pl-3 text-sm leading-relaxed"
-                            style={{ borderColor: colors.get(line.speakerId) }}
-                          >
-                            <span
-                              className="mr-2 font-mono text-[11px] uppercase tracking-wider"
-                              style={{ color: colors.get(line.speakerId) }}
+                          <li key={i} className="space-y-2">
+                            {line.pauseBefore > 0 && <PauseMarker sec={line.pauseBefore} />}
+                            <div
+                              className="border-l-2 pl-3 text-sm leading-relaxed"
+                              style={{ borderColor: colors.get(line.speakerId) }}
                             >
-                              {names.get(line.speakerId)}
-                            </span>
-                            {line.text}
+                              <span
+                                className="mr-2 font-mono text-[11px] uppercase tracking-wider"
+                                style={{ color: colors.get(line.speakerId) }}
+                              >
+                                {names.get(line.speakerId)}
+                              </span>
+                              {line.cues.map((c) => (
+                                <span
+                                  key={c}
+                                  className="mr-1.5 rounded-full border border-line px-1.5 py-px font-mono text-[10px] text-muted"
+                                >
+                                  {c}
+                                </span>
+                              ))}
+                              <LineText caption={line.caption} parts={line.parts} />
+                            </div>
                           </li>
                         ))}
+                        {scene.pauseAfter > 0 && (
+                          <li>
+                            <PauseMarker sec={scene.pauseAfter} />
+                          </li>
+                        )}
                       </ul>
                     )}
                   </div>
@@ -164,5 +180,48 @@ export function ScriptPreview({
         </ol>
       </div>
     </div>
+  );
+}
+
+function PauseMarker({ sec }: { sec: number }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 pl-3 font-mono text-[11px] text-muted">
+      <span aria-hidden>⏸</span> pause {sec}s
+    </span>
+  );
+}
+
+/**
+ * A line as it will be heard: inline pauses shown where they fall, or, when
+ * there are none, the caption text with *emphasis* in italics.
+ */
+function LineText({ caption, parts }: { caption: string; parts: (string | number)[] }) {
+  if (parts.some((p) => typeof p === "number")) {
+    return (
+      <>
+        {parts.map((p, i) =>
+          typeof p === "number" ? (
+            <span key={i} className="mx-1 font-mono text-[11px] text-muted">
+              ⏸ {p}s
+            </span>
+          ) : (
+            <span key={i}>{p} </span>
+          ),
+        )}
+      </>
+    );
+  }
+  return (
+    <>
+      {caption.split(/(\*[^*]+\*)/).map((piece, i) =>
+        piece.startsWith("*") && piece.endsWith("*") && piece.length > 2 ? (
+          <em key={i} className="text-ink">
+            {piece.slice(1, -1)}
+          </em>
+        ) : (
+          <span key={i}>{piece}</span>
+        ),
+      )}
+    </>
   );
 }

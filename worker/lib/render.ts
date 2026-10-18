@@ -3,8 +3,8 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseScript } from "../../src/shared/script/parse.ts";
 import type { Scene } from "../../src/shared/script/types.ts";
-import { computeTimeline, DEFAULT_TIMING } from "../../src/shared/timing.ts";
-import { splitCaption, type CaptionEvent } from "../../src/shared/captions.ts";
+import { computeTimeline, DEFAULT_TIMING, scenePauses } from "../../src/shared/timing.ts";
+import { emphasisPerWord, splitCaption, type CaptionEvent } from "../../src/shared/captions.ts";
 import {
   lineAudioBase,
   outputName,
@@ -156,7 +156,7 @@ export async function renderVideo(opts: RenderOptions): Promise<RenderResult> {
 
     log(`Measuring ${assets.reduce((n, a) => n + a.audio.length, 0)} audio clips...`);
     const durations = await Promise.all(assets.map((a) => mapLimit(a.audio, 4, (f) => probeDuration(abs(f)))));
-    const timeline = computeTimeline(durations);
+    const timeline = computeTimeline(durations, DEFAULT_TIMING, scenePauses(scenes));
     const total = timeline.totalSec;
     log(`Story length ${total.toFixed(1)} s across ${scenes.length} scenes.`);
 
@@ -170,7 +170,7 @@ export async function renderVideo(opts: RenderOptions): Promise<RenderResult> {
       const events: CaptionEvent[] = assets.flatMap((a, si) =>
         a.scene.lines.flatMap((line, li) => {
           const t = timeline.scenes[si].lines[li];
-          return splitCaption(line.text, t.start, t.end, spec.caption.maxCharsPerLine, spec.caption.maxLines);
+          return splitCaption(emphasisPerWord(line.caption), t.start, t.end, spec.caption.maxCharsPerLine, spec.caption.maxLines);
         }),
       );
       await writeFile(abs(`${workRel}/captions.ass`), buildAss(events, spec, style.captions.font));

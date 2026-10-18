@@ -5,13 +5,39 @@ export interface CaptionEvent {
   text: string;
 }
 
+/**
+ * Re-mark `*emphasis*` word by word ("*was mine*" -> "*was* *mine*"), so a
+ * caption split at any word boundary still opens and closes its italics.
+ */
+export function emphasisPerWord(caption: string): string {
+  let italic = false;
+  const words: { text: string; italicChars: number }[] = [{ text: "", italicChars: 0 }];
+  for (const ch of caption) {
+    if (ch === "*") {
+      italic = !italic;
+    } else if (/\s/.test(ch)) {
+      if (words[words.length - 1].text) words.push({ text: "", italicChars: 0 });
+    } else {
+      const w = words[words.length - 1];
+      w.text += ch;
+      if (italic) w.italicChars++;
+    }
+  }
+  return words
+    .filter((w) => w.text)
+    .map((w) => (w.italicChars * 2 > w.text.length ? `*${w.text}*` : w.text))
+    .join(" ");
+}
+
 /** Greedy word wrap. A single word longer than the limit gets its own line. */
 export function wrapWords(text: string, maxChars: number): string[] {
   const lines: string[] = [];
   let current = "";
+  // Emphasis markers are not shown, so they don't count towards the line length.
+  const visible = (s: string) => s.replace(/\*/g, "").length;
   for (const word of text.trim().split(/\s+/).filter(Boolean)) {
     if (!current) current = word;
-    else if (current.length + 1 + word.length <= maxChars) current += ` ${word}`;
+    else if (visible(current) + 1 + visible(word) <= maxChars) current += ` ${word}`;
     else {
       lines.push(current);
       current = word;

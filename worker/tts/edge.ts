@@ -1,7 +1,8 @@
 import { stat } from "node:fs/promises";
 import { EdgeTTS } from "node-edge-tts";
 import { voiceById } from "../../src/shared/voices.ts";
-import { errorMessage, type Availability, type TtsProvider } from "./types.ts";
+import { percent } from "../../src/shared/delivery.ts";
+import { errorMessage, type Availability, type SpeakOptions, type TtsProvider } from "./types.ts";
 
 export interface EdgeOptions {
   attempts: number;
@@ -23,6 +24,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 export class EdgeProvider implements TtsProvider {
   readonly name = "edge";
+  readonly nativeProsody = true;
   private readonly opts: EdgeOptions;
   private lastRequest = 0;
 
@@ -34,7 +36,7 @@ export class EdgeProvider implements TtsProvider {
     return { ok: true };
   }
 
-  async synthesize(text: string, voiceId: string, outBase: string): Promise<string> {
+  async synthesize(text: string, voiceId: string, outBase: string, opts: SpeakOptions = {}): Promise<string> {
     if (!voiceById(voiceId)) throw new Error(`Unknown voice "${voiceId}"`);
     const outFile = `${outBase}.mp3`;
     let lastError = "";
@@ -47,6 +49,10 @@ export class EdgeProvider implements TtsProvider {
           voice: voiceId,
           lang: voiceId.slice(0, 5),
           outputFormat: "audio-24khz-48kbitrate-mono-mp3",
+          // Delivery cues: the free endpoint accepts prosody only (styles need Azure).
+          rate: percent(opts.prosody?.rate ?? 0),
+          pitch: percent(opts.prosody?.pitch ?? 0),
+          volume: percent(opts.prosody?.volume ?? 0),
           timeout: this.opts.timeoutMs,
         });
         await tts.ttsPromise(text, outFile);

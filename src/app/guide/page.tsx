@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CUES } from "@/shared/delivery";
+import { EFFECTS } from "@/shared/effects";
 import { COMING_SOON_RULES, EXAMPLE_SCRIPT_V2, FORMAT_RULES, aiPrompt } from "@/shared/script/guide";
 import { Card, SectionLabel } from "@/components/ui";
 import { CopyButton, UseExampleButton } from "./guide-actions";
@@ -75,6 +76,37 @@ export default function GuidePage() {
                   <td className="p-3">{c.description}</td>
                   <td className="p-3 text-muted">{c.aliases.join(", ")}</td>
                   <td className="p-3 text-muted">{c.azureStyle ? "Real style" : "Same as free"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      </section>
+
+      <section aria-labelledby="effects" className="mt-10">
+        <SectionLabel>
+          <span id="effects">Motion effects</span>
+        </SectionLabel>
+        <p className="mt-2 text-sm text-muted">
+          Write <code className="font-mono text-accent">[fx: flicker, shake]</code> under a scene. Effects move the whole
+          picture (light, camera, haze), so a spinning winch reads as running machinery rather than a turning object. The
+          editor suggests effects from the scene description. Use them where the scene calls for it, not everywhere.
+        </p>
+        <Card className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-line font-mono text-[11px] uppercase tracking-wider text-muted">
+              <tr>
+                <th className="p-3 font-normal">Effect</th>
+                <th className="p-3 font-normal">Looks like</th>
+                <th className="p-3 font-normal">Also accepted</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {EFFECTS.map((e) => (
+                <tr key={e.name}>
+                  <td className="p-3 font-mono text-accent">{e.name}</td>
+                  <td className="p-3">{e.description}</td>
+                  <td className="p-3 text-muted">{e.aliases.join(", ")}</td>
                 </tr>
               ))}
             </tbody>

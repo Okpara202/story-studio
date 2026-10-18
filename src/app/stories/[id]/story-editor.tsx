@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { parseScript } from "@/shared/script/parse";
-import type { ParsedStory } from "@/shared/script/types";
+import type { ParsedStory, Scene } from "@/shared/script/types";
 import { estimateStorySec, formatDuration } from "@/shared/timing";
 import { suggestVoices } from "@/shared/voices";
 import type { JobFile } from "@/shared/job";
@@ -116,6 +116,13 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
       const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 24;
       el.scrollTop = Math.max(0, (line - 4) * lineHeight);
     });
+  };
+
+  // Writes the effects into the script under the scene's [scene: ...] line, so the script stays the one source.
+  const addEffects = (scene: Scene, effects: string[]) => {
+    const lines = script.split("\n");
+    lines.splice(scene.sourceLine, 0, `[fx: ${effects.join(", ")}]`);
+    setScript(lines.join("\n"));
   };
 
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -231,6 +238,7 @@ export function StoryEditor({ job, status, narratorVoice, artStyle, images: init
             voices={voices}
             onVoiceChange={setVoice}
             onJumpToLine={jumpToLine}
+            onAddEffects={addEffects}
             renderSceneImage={(scene) => (
               <SceneImage
                 sceneNo={scene.index}

@@ -6,6 +6,7 @@ export const EXAMPLE_SCRIPT = `${EXAMPLE_SCRIPT_V2}\n`;
 export const SCRIPT_CHEATSHEET = [
   { code: "# Title", note: "First line: the story title" },
   { code: "[scene: what we see]", note: "Starts a scene; the text becomes its picture" },
+  { code: "[fx: flicker, shake]", note: "Motion for the scene: flicker, shake, pulse, drift, glitch" },
   { code: "NARRATOR: text", note: "A spoken line. Any name before the colon is a character" },
   { code: "NAME (whispering): text", note: "How the line is delivered (see the Guide for all cues)" },
   { code: "[pause 2s]", note: "Silence; also works inside a line" },

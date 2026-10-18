@@ -1,4 +1,5 @@
 import { CUES } from "../delivery.ts";
+import { EFFECTS } from "../effects.ts";
 
 /**
  * The script format, in one place: the guide page, the editor cheat sheet and
@@ -17,6 +18,11 @@ export const FORMAT_RULES: FormatRule[] = [
     syntax: "[scene: what the viewer sees]",
     meaning: "Starts a new scene. The description becomes that scene's picture.",
     example: "[scene: a dim hotel corridor at night, one door slightly open]",
+  },
+  {
+    syntax: "[fx: flicker, shake]",
+    meaning: "Motion for the scene's picture, on the line under [scene: ...]. Up to 3 effects. They move the whole picture (light, camera, haze), not single objects.",
+    example: "[fx: flicker, shake]",
   },
   { syntax: "NAME: words", meaning: "A spoken line. NARRATOR tells the story; any other name is a character.", example: "CLERK: Nobody has stayed in that room in years." },
   {
@@ -48,18 +54,21 @@ NARRATOR (slow): The handwriting on the front was *mine*.
 [pause 2s]
 NARRATOR: I opened it [pause 1s] and read the first line.
 
-[scene: a brass key with a paper tag lying on a dark carpet]
+[scene: a brass key with a paper tag lying on a dark carpet under a failing fluorescent light]
+[fx: flicker]
 CLERK (whispering, scared): Please. Don't go up there.
 NARRATOR: That night, a key was waiting outside my door.`;
 
 /** Copy-paste instructions that make any AI (or person) write scripts this app reads perfectly. */
 export function aiPrompt(): string {
   const cues = CUES.map((c) => `${c.name} (${c.description.toLowerCase()})`).join(", ");
+  const effects = EFFECTS.map((e) => `${e.name} (${e.description.toLowerCase()})`).join(", ");
   return `Write a script for a narrated, illustrated story video. Use EXACTLY this plain-text format so it can be produced automatically.
 
 FORMAT
 - Line 1: # Title
 - [scene: ...] starts a new scene. Describe ONE clear, concrete image for that moment: setting, key object, lighting, mood. Keep the main subject in the centre of the frame. Prefer objects, rooms, documents, silhouettes and atmosphere over detailed faces. Do not include art-style words; the style is added automatically.
+- Optional motion, on the line right under a [scene: ...]: [fx: effect, effect]. Use only these effects: ${effects}. Add motion only where the scene really calls for it (about one scene in three), at most two effects.
 - NAME: text is a spoken line. Use NARRATOR for narration. Other characters use a short name in capitals, the same spelling every time (e.g. CLERK, MOTHER, DR HALE).
 - Delivery cue, optional, in brackets after the name: NAME (cue): text. Use only these cues: ${cues}. Combine at most two with a comma. Most lines need no cue.
 - [pause 2s] on its own line adds silence (use for dramatic beats, 1 to 3 seconds). [pause] alone is 1 second.

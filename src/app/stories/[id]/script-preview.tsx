@@ -3,6 +3,7 @@
 import { useMemo, type ReactNode } from "react";
 import type { ParsedStory, Scene } from "@/shared/script/types";
 import { estimateLineSec, formatDuration } from "@/shared/timing";
+import { EFFECTS, suggestEffects } from "@/shared/effects";
 import { Card, plural, SectionLabel, speakerColor } from "@/components/ui";
 import { VoicePicker } from "@/components/voice-picker";
 
@@ -16,6 +17,8 @@ interface Props {
   renderSceneImage?: (scene: Scene) => ReactNode;
   /** Extra controls next to the Scenes heading. */
   scenesToolbar?: ReactNode;
+  /** Adds an `[fx: ...]` line under the scene. */
+  onAddEffects?: (scene: Scene, effects: string[]) => void;
 }
 
 export function ScriptPreview({
@@ -26,6 +29,7 @@ export function ScriptPreview({
   onJumpToLine,
   renderSceneImage,
   scenesToolbar,
+  onAddEffects,
 }: Props) {
   const colors = useMemo(
     () => new Map(parsed.characters.map((c, i) => [c.id, speakerColor(i)])),
@@ -134,6 +138,7 @@ export function ScriptPreview({
                     </button>
                     <span className="shrink-0 font-mono text-xs text-muted">~{formatDuration(sec)}</span>
                   </div>
+                  <SceneEffects scene={scene} onAdd={onAddEffects} />
                   <div className={renderSceneImage ? "grid gap-4 p-4 sm:grid-cols-[8.5rem_1fr]" : "px-4 py-3"}>
                     {renderSceneImage && <div className="max-w-44">{renderSceneImage(scene)}</div>}
                     {scene.lines.length === 0 ? (
@@ -179,6 +184,35 @@ export function ScriptPreview({
           })}
         </ol>
       </div>
+    </div>
+  );
+}
+
+/** The scene's motion effects, and effects its description suggests (one click adds them). */
+function SceneEffects({ scene, onAdd }: { scene: Scene; onAdd?: (scene: Scene, effects: string[]) => void }) {
+  const suggested = suggestEffects(scene.description, scene.effects);
+  if (!scene.effects.length && !(onAdd && suggested.length)) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2 text-xs">
+      {scene.effects.map((e) => (
+        <span
+          key={e}
+          title={EFFECTS.find((x) => x.name === e)?.description}
+          className="rounded-full border border-accent/40 px-2 py-px font-mono text-[11px] text-accent"
+        >
+          ✦ {e}
+        </span>
+      ))}
+      {onAdd && suggested.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onAdd(scene, suggested)}
+          className="rounded-full border border-dashed border-line px-2 py-px text-muted transition hover:border-accent/60 hover:text-ink"
+          title={suggested.map((s) => EFFECTS.find((x) => x.name === s)?.description).join(" · ")}
+        >
+          + Add motion: {suggested.join(", ")}
+        </button>
+      )}
     </div>
   );
 }

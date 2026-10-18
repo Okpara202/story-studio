@@ -37,6 +37,8 @@ export interface Scene {
   lines: DialogueLine[];
   /** Seconds of `[pause]` lines after the last line of the scene. */
   pauseAfter: number;
+  /** Motion effects from `[fx: ...]`, canonical names. */
+  effects: string[];
 }
 
 export interface Character {

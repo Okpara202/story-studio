@@ -1,4 +1,5 @@
 import { CUES, findCue } from "../delivery.ts";
+import { EFFECTS, findEffect, MAX_EFFECTS_PER_SCENE } from "../effects.ts";
 import type {
   Character,
   DialogueLine,
@@ -75,7 +76,7 @@ export function parseScript(source: string): ParsedStory {
 
   const startScene = (description: string | null, line: number) => {
     closeScene();
-    scene = { index: scenes.length + 1, description, sourceLine: line, raw: [], pauseAfter: 0 };
+    scene = { index: scenes.length + 1, description, sourceLine: line, raw: [], pauseAfter: 0, effects: [] };
     scenes.push(scene);
     return scene;
   };
@@ -92,6 +93,21 @@ export function parseScript(source: string): ParsedStory {
       }
     }
     return out;
+  };
+
+  const addEffects = (target: { effects: string[] }, text: string | undefined, line: number) => {
+    const words = (text ?? "").split(/[,/]/).map((w) => w.trim()).filter(Boolean);
+    if (!words.length) warn(line, `[fx: ...] needs at least one effect: ${EFFECTS.map((e) => e.name).join(", ")}.`);
+    for (const word of words) {
+      const effect = findEffect(word);
+      if (!effect) {
+        warn(line, `Unknown effect "${word}". Known effects: ${EFFECTS.map((e) => e.name).join(", ")}.`);
+      } else if (target.effects.length >= MAX_EFFECTS_PER_SCENE) {
+        warn(line, `At most ${MAX_EFFECTS_PER_SCENE} effects per scene; "${word}" was ignored.`);
+      } else if (!target.effects.includes(effect.name)) {
+        target.effects.push(effect.name);
+      }
+    }
   };
 
   const addLine = (speakerName: string, text: string, cues: string[], line: number) => {
@@ -143,10 +159,14 @@ export function parseScript(source: string): ParsedStory {
       const tag = directive[1].toLowerCase();
       if (tag === "scene") {
         startScene(directive[2]?.trim() || null, lineNo);
+      } else if (tag === "fx" || tag === "effect" || tag === "effects") {
+        const current = scene as (typeof scenes)[number] | null;
+        if (!current) warn(lineNo, "[fx: ...] goes under a [scene: ...] line; this one was ignored.");
+        else addEffects(current, directive[2], lineNo);
       } else if (COMING_SOON[tag]) {
         warn(lineNo, COMING_SOON[tag]);
       } else {
-        warn(lineNo, `Unknown tag [${directive[1]}]. Supported: [scene: ...], [pause 2s], [music: ...], [sfx: ...]. Ignored.`);
+        warn(lineNo, `Unknown tag [${directive[1]}]. Supported: [scene: ...], [fx: ...], [pause 2s], [music: ...], [sfx: ...]. Ignored.`);
       }
       return;
     }
@@ -202,6 +222,7 @@ export function parseScript(source: string): ParsedStory {
       sourceLine: s.sourceLine,
       lines,
       pauseAfter: s.pauseAfter + carriedPause,
+      effects: s.effects,
     };
   });
 

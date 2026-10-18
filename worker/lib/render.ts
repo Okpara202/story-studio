@@ -16,6 +16,7 @@ import {
 import type { SceneTime } from "../../src/shared/status.ts";
 import { FORMATS } from "./formats.ts";
 import { lerpExpr, planMotion } from "./motion.ts";
+import { driftGraph, planEffects } from "./effects.ts";
 import { buildAss } from "./ass.ts";
 import { probeDuration, probeImageSize, runFfmpeg } from "./ffmpeg.ts";
 
@@ -207,12 +208,19 @@ export async function renderVideo(opts: RenderOptions): Promise<RenderResult> {
         y: o?.focusY ?? 0.5,
       });
       const last = t.frames - 1;
-      graph.push(
+      const fx = planEffects(a.scene.effects ?? [], { w: spec.width, h: spec.height });
+      const x = lerpExpr(plan.from.x, plan.to.x, last) + fx.jitterX;
+      const y = lerpExpr(plan.from.y, plan.to.y, last) + fx.jitterY;
+      const panned =
         `[${i}:v]scale=${plan.scaled.w}:${plan.scaled.h}:flags=lanczos,setsar=1,format=rgb24,` +
-          `loop=loop=${last}:size=1:start=0,setpts=N/(${FPS}*TB),` +
-          `crop=${spec.width}:${spec.height}:x=${lerpExpr(plan.from.x, plan.to.x, last)}:y=${lerpExpr(plan.from.y, plan.to.y, last)},` +
-          `format=yuv420p[v${i}]`,
-      );
+        `loop=loop=${last}:size=1:start=0,setpts=N/(${FPS}*TB),` +
+        `crop=${spec.width}:${spec.height}:x='${x}':y='${y}'`;
+      const finish = [...fx.after, "format=yuv420p"].join(",");
+      if (fx.drift) {
+        graph.push(`${panned}[p${i}]`, driftGraph(`p${i}`, `d${i}`, { w: spec.width, h: spec.height }), `[d${i}]${finish}[v${i}]`);
+      } else {
+        graph.push(`${panned},${finish}[v${i}]`);
+      }
     });
     const concatIn = assets.map((_, i) => `[v${i}]`).join("");
     graph.push(
